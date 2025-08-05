@@ -233,7 +233,7 @@ export default function ContentPostingPlatform() {
 
   return (
     <>
-    <div className="min-h-screen bg-gradient-to-br from-violet-200 via-fuchsia-200 to-rose-200 p-2 sm:p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-200 via-white to-gray-200 p-2 sm:p-4">
       <div className="max-w-6xl mx-auto space-y-4 sm:space-y-6">
         {/* Header */}
         <div className="text-center space-y-2 px-2">
