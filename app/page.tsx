@@ -710,9 +710,9 @@ export default function ContentPostingPlatform() {
                     href="https://rss-markdown-converter.vercel.app"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 underline hover:text-blue-800"
+                    className="text-gray-600 underline hover:text-gray-800"
                   >
-                    Content Generation Platform
+                    RSS to Markdown Converter
                   </a>
                 </p>
                 <p className="mt-1">© 2025 Content Posting Platform.</p>
