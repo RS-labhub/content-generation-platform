@@ -3,6 +3,7 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createAnthropic } from "@ai-sdk/anthropic"
 
 // Initialize GROQ (OpenAI-compatible) and Gemini clients
 const groqClient = createOpenAI({
@@ -14,27 +15,62 @@ const geminiClient = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
+// Add after the existing client initializations
+const openaiClient = createOpenAI({
+  apiKey: "", // Will be set dynamically
+})
+
+const anthropicClient = createAnthropic({
+  apiKey: "", // Will be set dynamically
+})
+
+// Update the GeneratePostParams interface
 export interface GeneratePostParams {
-  platform: string;
-  style: string;
-  keywords: string;
-  content: string;
-  provider: "groq" | "gemini";
+  platform: string
+  style: string
+  keywords: string
+  content: string
+  provider: "groq" | "gemini" | "openai" | "anthropic"
+  apiKey?: string
+  model?: string
 }
 
-export async function generatePost({
-  platform,
-  style,
-  keywords,
-  content,
-  provider,
-}: GeneratePostParams) {
-  try {
-    const model =
-      provider === "groq"
-        ? groqClient.chat("llama-3.3-70b-versatile")
-        : geminiClient("models/gemini-2.0-flash");
+// Update the GenerateContentDiagramParams interface
+export interface GenerateContentDiagramParams {
+  content: string
+  diagramType: string
+  provider: "groq" | "gemini" | "openai" | "anthropic"
+  apiKey?: string
+  model?: string
+}
 
+// Update the generatePost function to handle new providers
+export async function generatePost({ platform, style, keywords, content, provider, apiKey, model }: GeneratePostParams) {
+  try {
+    let aiModel
+
+    switch (provider) {
+      case "groq":
+        aiModel = groqClient.chat("llama-3.3-70b-versatile")
+        break
+      case "gemini":
+        aiModel = geminiClient("models/gemini-2.0-flash")
+        break
+      case "openai":
+        if (!apiKey) throw new Error("OpenAI API key is required")
+        const openai = createOpenAI({ apiKey })
+        aiModel = openai(model || "gpt-4")
+        break
+      case "anthropic":
+        if (!apiKey) throw new Error("Anthropic API key is required")
+        const anthropic = createAnthropic({ apiKey })
+        aiModel = anthropic(model || "claude-3-5-sonnet-20241022")
+        break
+      default:
+        throw new Error("Unsupported provider")
+    }
+
+    // Rest of the function remains the same...
     const platformGuidelines = {
       linkedin: {
         description:
@@ -123,104 +159,63 @@ Instructions:
 9. Make sure the post feels authentic to the platform's culture
 
 Generate only the final post content, ready to publish:
-`;
+`
 
     const { text } = await generateText({
-      model,
+      model: aiModel,
       prompt,
-    });
+    })
 
     return {
       success: true,
       post: text.trim(),
       provider,
       timestamp: new Date().toISOString(),
-    };
+    }
   } catch (error) {
-    console.error("Error generating post:", error);
+    console.error("Error generating post:", error)
     return {
       success: false,
-      error: "Failed to generate post. Please try again.",
+      error: error instanceof Error ? error.message : "Failed to generate post. Please try again.",
       provider,
       timestamp: new Date().toISOString(),
-    };
+    }
   }
 }
 
-export async function generateMermaidDiagram({
-  platform,
-  style,
-  keywords,
-  content,
-  provider,
-}: GeneratePostParams) {
-  try {
-    const model =
-      provider === "groq"
-        ? groqClient.chat("llama3-70b-8192")
-        : geminiClient("models/gemini-1.5-pro-latest");
-
-    const prompt = `
-Create a Mermaid flowchart diagram that visualizes the content transformation process for a ${platform} post.
-
-Context:
-- Platform: ${platform}
-- Style: ${style}
-- Keywords: ${keywords}
-- Source Content: ${content.substring(0, 500)}...
-
-Create a flowchart that shows:
-1. Content input and analysis stage
-2. Platform-specific processing steps
-3. Style and keyword integration
-4. Content optimization phases
-5. Final output generation
-
-The diagram should reflect the actual content being processed and show how it gets transformed specifically for ${platform} with the ${style} approach.
-
-Use proper Mermaid syntax with quotes around node names. Make it visually clear and informative.
-Include specific references to the content type and transformation steps.
-
-Generate only the Mermaid code:
-`;
-
-    const { text } = await generateText({
-      model,
-      prompt,
-    });
-
-    return {
-      success: true,
-      diagram: text.trim(),
-      provider,
-    };
-  } catch (error) {
-    console.error("Error generating diagram:", error);
-    return {
-      success: false,
-      error: "Failed to generate diagram.",
-      provider,
-    };
-  }
-}
-
-export interface GenerateContentDiagramParams {
-  content: string;
-  diagramType: string;
-  provider: "groq" | "gemini";
-}
-
+// Update the generateContentDiagram function similarly
 export async function generateContentDiagram({
   content,
   diagramType,
   provider,
+  apiKey,
+  model,
 }: GenerateContentDiagramParams) {
   try {
-    const model =
-      provider === "groq"
-        ? groqClient.chat("llama3-70b-8192")
-        : geminiClient("models/gemini-1.5-pro-latest");
+    let aiModel
 
+    switch (provider) {
+      case "groq":
+        aiModel = groqClient.chat("llama3-70b-8192")
+        break
+      case "gemini":
+        aiModel = geminiClient("models/gemini-1.5-pro-latest")
+        break
+      case "openai":
+        if (!apiKey) throw new Error("OpenAI API key is required")
+        const openai = createOpenAI({ apiKey })
+        aiModel = openai(model || "gpt-4")
+        break
+      case "anthropic":
+        if (!apiKey) throw new Error("Anthropic API key is required")
+        const anthropic = createAnthropic({ apiKey })
+        aiModel = anthropic(model || "claude-3-5-sonnet-20241022")
+        break
+      default:
+        throw new Error("Unsupported provider")
+    }
+
+    // Rest of the function remains the same with the updated model...
     const prompt = `
 You are an expert at creating Mermaid diagrams. Create a ${diagramType} diagram based on the content provided.
 
@@ -255,65 +250,47 @@ STRUCTURE GUIDELINES:
 5. Ensure logical flow and relationships
 
 Generate ONLY the Mermaid diagram code following the exact format above:
-`;
+`
 
-    const { text } = await generateText({ model, prompt });
+    const { text } = await generateText({ model: aiModel, prompt })
 
-    // Clean up the response
-    let cleaned = text.trim();
+    // Clean up the response (same as before)
+    let cleaned = text.trim()
+    cleaned = cleaned.replace(/\`\`\`mermaid\n?/gi, "").replace(/\`\`\`/g, "")
 
-    // Remove markdown code blocks
-    cleaned = cleaned.replace(/```mermaid\n?/gi, "").replace(/```/g, "");
-
-    // Remove any explanatory text before the diagram
-    const lines = cleaned.split("\n");
+    const lines = cleaned.split("\n")
     const diagramStartIndex = lines.findIndex((line) =>
       /^flowchart\s+(TD|TB|BT|RL|LR)/i.test(line.trim())
-    );
+    )
 
     if (diagramStartIndex !== -1) {
-      // Only keep diagram lines until we hit an invalid line
-      const diagramLines = [];
-
+      const diagramLines = []
       for (let i = diagramStartIndex; i < lines.length; i++) {
-        const line = lines[i].trim();
-
-        // Stop collecting if it's clearly not part of the diagram
-        if (
-          /^(Let me know|If you need|I'm here|Hope that helps|Feel free)/i.test(
-            line
-          )
-        )
-          break;
-        if (line === "") continue;
-
-        diagramLines.push(line);
+        const line = lines[i].trim()
+        if (/^(Let me know|If you need|I'm here|Hope that helps|Feel free)/i.test(line)) break
+        if (line === "") continue
+        diagramLines.push(line)
       }
-
-      cleaned = diagramLines.join("\n");
+      cleaned = diagramLines.join("\n")
     }
 
-    // Remove lingering markdown/code hints or assistant-style phrases
-    cleaned = cleaned
-      .replace(/^(Let me know|Hope this helps|I'm here.*)/gim, "")
-      .trim();
+    cleaned = cleaned.replace(/^(Let me know|Hope this helps|I'm here.*)/gim, "").trim()
 
-    // Ensure it starts with flowchart if not present
     if (!/^flowchart\s+(TD|TB|BT|RL|LR)/i.test(cleaned)) {
-      cleaned = `flowchart TD\n${cleaned}`;
+      cleaned = `flowchart TD\n${cleaned}`
     }
 
     return {
       success: true,
       diagram: cleaned,
       provider,
-    };
+    }
   } catch (error) {
-    console.error("Error generating content diagram:", error);
+    console.error("Error generating content diagram:", error)
     return {
       success: false,
-      error: "Failed to generate diagram.",
+      error: error instanceof Error ? error.message : "Failed to generate diagram.",
       provider,
-    };
+    }
   }
 }
