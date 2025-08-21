@@ -3,13 +3,13 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, Sparkles, Zap, Brain, BarChart3Icon as Diagram3 } from 'lucide-react'
+import { Loader2, Sparkles, Zap, Brain, BarChart3Icon as Diagram3 } from "lucide-react"
 import { generatePost, generateContentDiagram } from "./actions/generate-post"
 import { useToast } from "@/hooks/use-toast"
 import { Analytics } from "@vercel/analytics/react"
 import { APIKeyDialog } from "@/components/api-key-dialog"
 import { apiKeyManager, type APIProvider } from "@/lib/api-key-manager"
-import { Bot, Cpu } from 'lucide-react'
+import { Bot, Cpu } from "lucide-react"
 
 // Import all the new components
 import { Header } from "@/components/header"
@@ -22,6 +22,7 @@ import { DiagramContentInput } from "@/components/diagram-content-input"
 import { GeneratedDiagramDisplay } from "@/components/generated-diagram-display"
 import { MermaidResources } from "@/components/mermaid-resources"
 import { Footer } from "@/components/footer"
+import { PersonaTrainingDialog } from "@/components/persona-training-dialog"
 
 // Define all providers including the new ones
 const allProviders: APIProvider[] = [
@@ -96,6 +97,8 @@ export default function ContentPostingPlatform() {
   const [generatedPost, setGeneratedPost] = useState<string>("")
   const [mermaidDiagram, setMermaidDiagram] = useState<string>("")
   const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({})
+  const [selectedPersona, setSelectedPersona] = useState<string>("default")
+  const [showPersonaDialog, setShowPersonaDialog] = useState(false)
   const { toast } = useToast()
 
   // Load saved data on mount
@@ -103,6 +106,7 @@ export default function ContentPostingPlatform() {
     const savedContext = localStorage.getItem("postContext")
     const savedContent = localStorage.getItem("postContent")
     const savedDiagramContent = localStorage.getItem("diagramContent")
+    const savedPersona = localStorage.getItem("selectedPersona")
 
     if (savedContext) {
       try {
@@ -122,6 +126,9 @@ export default function ContentPostingPlatform() {
     if (savedDiagramContent) {
       setDiagramContent(savedDiagramContent || "")
     }
+    if (savedPersona) {
+      setSelectedPersona(savedPersona || "default")
+    }
   }, [])
 
   useEffect(() => {
@@ -129,13 +136,14 @@ export default function ContentPostingPlatform() {
     const savedProvider = localStorage.getItem("activeProvider")
     const savedKeyId = localStorage.getItem("activeKeyId")
     const savedModel = localStorage.getItem("activeModel")
-    
+
     if (savedProvider) {
-      const providerInfo = allProviders.find(p => p.id === savedProvider)
+      const providerInfo = allProviders.find((p) => p.id === savedProvider)
       if (providerInfo) {
         setProvider(savedProvider as any)
         setActiveProvider(providerInfo)
-        if (savedKeyId && providerInfo.requiresKey) {
+
+        if (providerInfo.requiresKey && savedKeyId) {
           setActiveKeyId(savedKeyId)
         }
         if (savedModel) {
@@ -160,14 +168,19 @@ export default function ContentPostingPlatform() {
     localStorage.setItem("diagramContent", diagramContent)
   }, [diagramContent])
 
+  // Save persona in real-time
+  useEffect(() => {
+    localStorage.setItem("selectedPersona", selectedPersona)
+  }, [selectedPersona])
+
   // Helper functions
   const handleProviderChange = (providerId: string, keyId?: string) => {
-    const providerInfo = allProviders.find(p => p.id === providerId)
+    const providerInfo = allProviders.find((p) => p.id === providerId)
     if (!providerInfo) return
 
     setProvider(providerId as any)
     setActiveProvider(providerInfo)
-    
+
     if (providerInfo.requiresKey && keyId) {
       setActiveKeyId(keyId)
       const models = apiKeyManager.getAPIKeyModels(keyId)
@@ -194,10 +207,14 @@ export default function ContentPostingPlatform() {
   }
 
   const handleGenerate = async () => {
-    if (!context.platform || !context.style || !content.trim()) {
+    const hasPersona = selectedPersona && selectedPersona !== "default"
+
+    if (!context.platform || (!hasPersona && !context.style) || !content.trim()) {
       toast({
         title: "Missing Information",
-        description: "Please fill in platform, style, and content fields.",
+        description: hasPersona
+          ? "Please fill in platform and content fields."
+          : "Please fill in platform, style, and content fields.",
         variant: "destructive",
       })
       return
@@ -224,13 +241,14 @@ export default function ContentPostingPlatform() {
         provider: provider,
         apiKey: getActiveApiKey() || undefined,
         model: activeModel || undefined,
+        persona: hasPersona ? selectedPersona : undefined,
       })
 
       if (result.success && result.post) {
         setGeneratedPost(result.post)
         toast({
           title: "Post Generated!",
-          description: `Successfully generated ${context.platform} post using ${activeProvider.name}.`,
+          description: `Successfully generated ${context.platform} post using ${activeProvider.name}${hasPersona ? ` with ${selectedPersona} persona` : ""}.`,
         })
       } else {
         toast({
@@ -359,15 +377,15 @@ export default function ContentPostingPlatform() {
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
                 {/* Left Column - Input */}
                 <div className="space-y-6">
-                  <PostContextForm 
-                    context={context} 
-                    onContextChange={setContext} 
+                  <PostContextForm
+                    context={context}
+                    onContextChange={setContext}
+                    selectedPersona={selectedPersona}
+                    onPersonaChange={setSelectedPersona}
+                    onShowPersonaDialog={() => setShowPersonaDialog(true)}
                   />
-                  
-                  <SourceContentInput 
-                    content={content} 
-                    onContentChange={setContent} 
-                  />
+
+                  <SourceContentInput content={content} onContentChange={setContent} />
 
                   <Button onClick={handleGenerate} disabled={isGenerating} className="w-full" size="lg">
                     {isGenerating ? (
@@ -390,6 +408,7 @@ export default function ContentPostingPlatform() {
                     generatedPost={generatedPost}
                     context={context}
                     provider={provider}
+                    selectedPersona={selectedPersona !== "default" ? selectedPersona : undefined}
                     copiedStates={copiedStates}
                     onCopy={copyToClipboard}
                   />
@@ -421,10 +440,7 @@ export default function ContentPostingPlatform() {
                     onProviderChange={handleProviderChange}
                   />
 
-                  <DiagramContentInput
-                    diagramContent={diagramContent}
-                    onDiagramContentChange={setDiagramContent}
-                  />
+                  <DiagramContentInput diagramContent={diagramContent} onDiagramContentChange={setDiagramContent} />
 
                   <Button onClick={handleGenerateDiagram} disabled={isGeneratingDiagram} className="w-full" size="lg">
                     {isGeneratingDiagram ? (
@@ -467,6 +483,27 @@ export default function ContentPostingPlatform() {
         onOpenChange={setShowAPIKeyDialog}
         providers={allProviders}
         onKeyAdded={handleKeyAdded}
+      />
+      <PersonaTrainingDialog
+        open={showPersonaDialog}
+        onOpenChange={(open) => {
+          setShowPersonaDialog(open)
+          // Refresh personas when dialog closes
+          if (!open) {
+            // Trigger personas refresh
+            window.dispatchEvent(new Event("personas-updated"))
+          }
+        }}
+        onPersonaAdded={(personaName) => {
+          setSelectedPersona(personaName)
+          // Trigger personas refresh
+          window.dispatchEvent(new Event("personas-updated"))
+          toast({
+            title: "Persona Added",
+            description: `${personaName} persona is now selected for content generation.`,
+          })
+        }}
+        currentPersona={selectedPersona !== "default" ? selectedPersona : undefined}
       />
       <Analytics />
     </>

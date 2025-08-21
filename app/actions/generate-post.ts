@@ -1,19 +1,19 @@
-"use server";
+"use server"
 
-import { generateText } from "ai";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText } from "ai"
+import { createOpenAI } from "@ai-sdk/openai"
+import { createGoogleGenerativeAI } from "@ai-sdk/google"
 import { createAnthropic } from "@ai-sdk/anthropic"
 
 // Initialize GROQ (OpenAI-compatible) and Gemini clients
 const groqClient = createOpenAI({
   baseURL: "https://api.groq.com/openai/v1",
   apiKey: process.env.GROQ_API_KEY,
-});
+})
 
 const geminiClient = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY,
-});
+})
 
 // Add after the existing client initializations
 const openaiClient = createOpenAI({
@@ -33,6 +33,7 @@ export interface GeneratePostParams {
   provider: "groq" | "gemini" | "openai" | "anthropic"
   apiKey?: string
   model?: string
+  persona?: string // Add persona parameter
 }
 
 // Update the GenerateContentDiagramParams interface
@@ -44,8 +45,17 @@ export interface GenerateContentDiagramParams {
   model?: string
 }
 
-// Update the generatePost function to handle new providers
-export async function generatePost({ platform, style, keywords, content, provider, apiKey, model }: GeneratePostParams) {
+// Update the generatePost function to handle new providers and use persona data
+export async function generatePost({
+  platform,
+  style,
+  keywords,
+  content,
+  provider,
+  apiKey,
+  model,
+  persona,
+}: GeneratePostParams) {
   try {
     let aiModel
 
@@ -70,11 +80,25 @@ export async function generatePost({ platform, style, keywords, content, provide
         throw new Error("Unsupported provider")
     }
 
-    // Rest of the function remains the same...
+    // Get persona training data if persona is specified
+    let personaTrainingData = ""
+    let personaInstructions = ""
+    if (persona && typeof window !== "undefined") {
+      try {
+        const { getPersonaTrainingDataWithType } = await import("@/lib/persona-training")
+        const personaData = getPersonaTrainingDataWithType(persona)
+        if (personaData) {
+          personaTrainingData = personaData.rawContent
+          personaInstructions = personaData.instructions || ""
+        }
+      } catch (error) {
+        console.error("Error loading persona data:", error)
+      }
+    }
+
     const platformGuidelines = {
       linkedin: {
-        description:
-          "Professional network format, use line breaks, include relevant hashtags, encourage engagement",
+        description: "Professional network format, use line breaks, include relevant hashtags, encourage engagement",
         maxLength: "1300 characters",
         tone: "professional and engaging",
       },
@@ -84,26 +108,22 @@ export async function generatePost({ platform, style, keywords, content, provide
         tone: "concise and impactful",
       },
       reddit: {
-        description:
-          "Conversational Reddit format, detailed but engaging, use appropriate subreddit tone",
+        description: "Conversational Reddit format, detailed but engaging, use appropriate subreddit tone",
         maxLength: "moderate length, detailed explanation",
         tone: "conversational and informative",
       },
       instagram: {
-        description:
-          "Visual-focused format with engaging captions, use relevant hashtags",
+        description: "Visual-focused format with engaging captions, use relevant hashtags",
         maxLength: "2200 characters maximum",
         tone: "engaging and visual",
       },
       facebook: {
-        description:
-          "Community-focused format, encourage discussion and sharing",
+        description: "Community-focused format, encourage discussion and sharing",
         maxLength: "500-600 characters for optimal engagement",
         tone: "friendly and community-oriented",
       },
       tiktok: {
-        description:
-          "Short, catchy format for video descriptions, trending hashtags",
+        description: "Short, catchy format for video descriptions, trending hashtags",
         maxLength: "150 characters maximum",
         tone: "trendy and energetic",
       },
@@ -127,17 +147,16 @@ export async function generatePost({ platform, style, keywords, content, provide
         maxLength: "500 characters per post",
         tone: "conversational and authentic",
       },
-    };
+    }
 
-    const platformInfo =
-      platformGuidelines[platform as keyof typeof platformGuidelines] ||
-      platformGuidelines.linkedin;
+    const platformInfo = platformGuidelines[platform as keyof typeof platformGuidelines] || platformGuidelines.linkedin
 
-    const prompt = `
+    // Build the prompt with persona training data if available
+    let prompt = `
 You are an expert social media content creator. Generate a ${platform} post based on the following:
 
 Platform: ${platform}
-Custom Style: ${style}
+${!personaTrainingData ? `Custom Style: ${style}` : ""}
 Keywords to emphasize: ${keywords}
 
 Platform Guidelines: ${platformInfo.description}
@@ -149,17 +168,34 @@ ${content}
 
 Instructions:
 1. Transform the source content into a ${platform}-optimized post
-2. Follow the custom style approach: "${style}"
+${!personaTrainingData ? `2. Follow the custom style approach: "${style}"` : ""}
+${personaTrainingData ? "2. Follow the persona style and instructions provided below" : ""}
 3. Emphasize and naturally incorporate these keywords: "${keywords}"
 4. Respect the platform's ${platformInfo.maxLength} requirement
 5. Use a ${platformInfo.tone} tone
 6. Include relevant hashtags where appropriate for the platform
 7. Ensure it's engaging and platform-appropriate
 8. If the source content is unorganized, structure it clearly
-9. Make sure the post feels authentic to the platform's culture
+9. Make sure the post feels authentic to the platform's culture`
 
-Generate only the final post content, ready to publish:
-`
+    // Add persona training data to the prompt if available
+    if (personaTrainingData) {
+      prompt += `
+
+PERSONA INSTRUCTIONS:
+${personaInstructions ? `Follow these specific instructions: ${personaInstructions}` : "Use the writing style demonstrated in the examples below."}
+
+WRITING STYLE REFERENCE:
+The following are examples of the desired writing style and tone. Study these examples carefully and mimic the writing patterns, vocabulary choices, sentence structure, and overall voice:
+
+${personaTrainingData}
+
+Please generate the ${platform} post using the same writing style, tone, and voice as demonstrated in the examples above. Match the personality, vocabulary, and communication patterns while adapting the content for ${platform}.`
+    }
+
+    prompt += `
+
+Generate only the final post content, ready to publish:`
 
     const { text } = await generateText({
       model: aiModel,
@@ -256,12 +292,10 @@ Generate ONLY the Mermaid diagram code following the exact format above:
 
     // Clean up the response (same as before)
     let cleaned = text.trim()
-    cleaned = cleaned.replace(/\`\`\`mermaid\n?/gi, "").replace(/\`\`\`/g, "")
+    cleaned = cleaned.replace(/```mermaid\n?/gi, "").replace(/```/g, "")
 
     const lines = cleaned.split("\n")
-    const diagramStartIndex = lines.findIndex((line) =>
-      /^flowchart\s+(TD|TB|BT|RL|LR)/i.test(line.trim())
-    )
+    const diagramStartIndex = lines.findIndex((line) => /^flowchart\s+(TD|TB|BT|RL|LR)/i.test(line.trim()))
 
     if (diagramStartIndex !== -1) {
       const diagramLines = []

@@ -1,7 +1,9 @@
+"use client"
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Copy, Check, Sparkles } from 'lucide-react'
+import { Copy, Check, Sparkles } from "lucide-react"
 
 interface PostContext {
   platform: string
@@ -13,16 +15,18 @@ interface GeneratedPostDisplayProps {
   generatedPost: string
   context: PostContext
   provider: string
+  selectedPersona?: string
   copiedStates: { [key: string]: boolean }
   onCopy: (text: string, type: string) => void
 }
 
-export function GeneratedPostDisplay({ 
-  generatedPost, 
-  context, 
-  provider, 
-  copiedStates, 
-  onCopy 
+export function GeneratedPostDisplay({
+  generatedPost,
+  context,
+  provider,
+  selectedPersona,
+  copiedStates,
+  onCopy,
 }: GeneratedPostDisplayProps) {
   return (
     <Card>
@@ -69,6 +73,11 @@ export function GeneratedPostDisplay({
               {context.keywords && (
                 <Badge variant="outline" className="text-xs truncate max-w-[150px]">
                   Keywords: {context.keywords}
+                </Badge>
+              )}
+              {selectedPersona && (
+                <Badge variant="outline" className="text-xs truncate max-w-[120px]">
+                  Persona: {selectedPersona}
                 </Badge>
               )}
               <Badge variant="outline" className="text-xs">
