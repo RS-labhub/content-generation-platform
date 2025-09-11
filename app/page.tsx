@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Analytics } from "@vercel/analytics/react"
 import { APIKeyDialog } from "@/components/api-key-dialog"
 import { apiKeyManager, type APIProvider } from "@/lib/api-key-manager"
-import { Bot, Cpu } from "lucide-react"
+import { Bot, Cpu, FileImage } from "lucide-react"
 
 // Import all the new components
 import { Header } from "@/components/header"
@@ -29,6 +29,7 @@ import { ContextManagerDialog } from "@/components/context-manager-dialog"
 import { getContextData } from "@/lib/context-manager"
 import { LinkedInCarouselConfig } from "@/components/linkedin-carousel-config"
 import { GeneratedCarouselDisplay } from "@/components/generated-carousel-display"
+import { PostTools } from "@/components/post-tools"
 
 // Define all providers including the new ones
 const allProviders: APIProvider[] = [
@@ -74,6 +75,18 @@ const allProviders: APIProvider[] = [
     keyPlaceholder: "sk-ant-...",
     keyValidation: (key: string) => key.startsWith("sk-ant-") && key.length > 20,
     defaultModels: ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307", "claude-3-opus-20240229"],
+    supportsCustomModels: true,
+  },
+  {
+    id: "huggingface",
+    name: "Hugging Face",
+    description: "Access to a wide variety of open-source models and cutting-edge AI research",
+    icon: <FileImage className="h-4 w-4 text-yellow-600" />,
+    model: "Llama & FLUX Models",
+    requiresKey: true,
+    keyPlaceholder: "hf_...",
+    keyValidation: (key: string) => key.startsWith("hf_") && key.length > 20,
+    defaultModels: ["meta-llama/Llama-2-7b-chat-hf", "black-forest-labs/FLUX.1-schnell", "stabilityai/stable-diffusion-xl-base-1.0"],
     supportsCustomModels: true,
   },
 ]
@@ -570,6 +583,14 @@ export default function ContentPostingPlatform() {
                     copiedStates={copiedStates}
                     onCopy={copyToClipboard}
                     onPostUpdate={setGeneratedPost}
+                  />
+                  
+                  <PostTools
+                    post={generatedPost}
+                    postTitle={content ? content.split('\n')[0] : ""}
+                    postLink=""
+                    isLoading={isGenerating}
+                    platform={context.platform}
                   />
 
                   <AIProviderSelection
