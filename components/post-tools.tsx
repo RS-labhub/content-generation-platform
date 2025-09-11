@@ -146,6 +146,12 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
   const [isGeneratingComments, setIsGeneratingComments] = useState(false)
   const [generatedComments, setGeneratedComments] = useState<string[]>([])
   const [commentError, setCommentError] = useState("")
+  const [useCustomPost, setUseCustomPost] = useState(false)
+  const [customPostContent, setCustomPostContent] = useState("")
+  
+  // Summary generation states
+  const [useCustomPostForSummary, setUseCustomPostForSummary] = useState(false)
+  const [customPostContentForSummary, setCustomPostContentForSummary] = useState("")
   
   // API Key dialog
   const [showAPIKeyDialog, setShowAPIKeyDialog] = useState(false)
@@ -154,6 +160,16 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
   // Copy states
   const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({})
   const { toast } = useToast()
+
+  // Auto-switch to custom post when no generated post is available
+  useEffect(() => {
+    if (!post && !useCustomPost) {
+      setUseCustomPost(true)
+    }
+    if (!post && !useCustomPostForSummary) {
+      setUseCustomPostForSummary(true)
+    }
+  }, [post, useCustomPost, useCustomPostForSummary])
 
   // Auto-generate image prompt when content is available
   useEffect(() => {
@@ -201,13 +217,16 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
   }
 
   const handleGenerateSummary = async () => {
-    if (!post || isSummarizing) return
+    // Determine which post content to use
+    const postContentToUse = useCustomPostForSummary ? customPostContentForSummary.trim() : post;
+    
+    if (!postContentToUse || isSummarizing) return
     setIsSummarizing(true)
     
     // Simulate API call with timeout
     setTimeout(() => {
       // Example summary generation
-      const postLines = post.split("\n").filter(line => line.trim().length > 0)
+      const postLines = postContentToUse.split("\n").filter(line => line.trim().length > 0)
       const firstSentences = postLines.slice(0, 2).join(" ")
       const lastSentence = postLines[postLines.length - 1]
       setSummary(`${firstSentences} [...] ${lastSentence}`)
@@ -305,9 +324,15 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
   }
 
   const handleGenerateComments = async () => {
-    if (!post) {
-      setCommentError("Post content is required for comment generation")
-      return
+    // Determine which post content to use
+    const postContentToUse = useCustomPost ? customPostContent.trim() : post;
+    
+    if (!postContentToUse) {
+      setCommentError(useCustomPost 
+        ? "Please enter your post content" 
+        : "Post content is required for comment generation"
+      );
+      return;
     }
 
     // Determine the actual count to use
@@ -332,7 +357,7 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
         },
         body: JSON.stringify({
           provider: selectedCommentProvider,
-          content: post,
+          content: postContentToUse,
           title: postTitle,
           link: postLink,
           persona: selectedPersona,
@@ -440,8 +465,8 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
           <Tabs defaultValue="images" className="w-full">
             <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="images">Images</TabsTrigger>
-              <TabsTrigger value="comments" disabled={!post}>Comments</TabsTrigger>
-              <TabsTrigger value="summary" disabled={!post}>Summary</TabsTrigger>
+              <TabsTrigger value="comments">Comments</TabsTrigger>
+              <TabsTrigger value="summary">Summary</TabsTrigger>
               <TabsTrigger value="overview">Overview</TabsTrigger>
             </TabsList>
 
@@ -671,22 +696,87 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
 
             {/* Comments Tab - Active after post creation */}
             <TabsContent value="comments" className="space-y-4">
-              {!post ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>Generate a post first to access comment generation</p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">AI Comment Generation</h3>
+                  <Badge variant="outline" className="text-xs">
+                    {useCustomPost ? "Custom Post" : "Generated Post"}
+                  </Badge>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-sm">AI Comment Generation</h3>
-                    <Badge variant="outline" className="text-xs">
-                      Post Required
-                    </Badge>
-                  </div>
 
-                  {/* Persona Selection */}
-                  <div className="grid grid-cols-2 gap-4">
+                {/* Post Content Source Selection */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Post Content Source</Label>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="generated-post"
+                        name="post-source"
+                        checked={!useCustomPost}
+                        onChange={() => setUseCustomPost(false)}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <Label htmlFor="generated-post" className="text-sm cursor-pointer">
+                        Use Generated Post
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="custom-post"
+                        name="post-source"
+                        checked={useCustomPost}
+                        onChange={() => setUseCustomPost(true)}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <Label htmlFor="custom-post" className="text-sm cursor-pointer">
+                        Use Custom Post
+                      </Label>
+                    </div>
+                  </div>
+                  
+                  {/* Generated Post Status or Custom Post Input */}
+                  {!useCustomPost ? (
+                    !post ? (
+                      <div className="text-center py-4 text-muted-foreground border rounded-lg bg-muted/30">
+                        <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-sm">No generated post available</p>
+                        <p className="text-xs mt-1">Generate a post first or switch to "Use Custom Post"</p>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-muted/30 rounded-lg border">
+                        <p className="text-xs text-muted-foreground mb-1">Generated Post Preview:</p>
+                        <p className="text-sm line-clamp-3">{post}</p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Paste Your Post Content</Label>
+                      <Textarea
+                        placeholder="Paste your existing post content here (from LinkedIn, Twitter, etc.)..."
+                        value={customPostContent}
+                        onChange={(e) => setCustomPostContent(e.target.value)}
+                        className="min-h-[120px] resize-none"
+                        maxLength={2000}
+                      />
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs text-muted-foreground">
+                          Paste content from any social media platform
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {customPostContent.length}/2000
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Show rest of the form only if conditions are met */}
+                {((!useCustomPost && post) || (useCustomPost && customPostContent.trim())) && (
+                  <div className="space-y-4">
+                    {/* Persona Selection */}
+                    <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-sm">Persona</Label>
                       <Select value={selectedPersona} onValueChange={setSelectedPersona}>
@@ -798,35 +888,109 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
                       </CardContent>
                     </Card>
                   )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </TabsContent>
 
-            {/* Summary Tab - Active after post creation */}
+            {/* Summary Tab */}
             <TabsContent value="summary" className="space-y-4">
-              {!post ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>Generate a post first to access summary generation</p>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm">Content Summary</h3>
+                  <Badge variant="outline" className="text-xs">
+                    {useCustomPostForSummary ? "Custom Post" : "Generated Post"}
+                  </Badge>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-sm">Content Summary</h3>
+
+                {/* Post Content Source Selection */}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Post Content Source</Label>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="generated-post-summary"
+                        name="post-source-summary"
+                        checked={!useCustomPostForSummary}
+                        onChange={() => setUseCustomPostForSummary(false)}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <Label htmlFor="generated-post-summary" className="text-sm cursor-pointer">
+                        Use Generated Post
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="radio"
+                        id="custom-post-summary"
+                        name="post-source-summary"
+                        checked={useCustomPostForSummary}
+                        onChange={() => setUseCustomPostForSummary(true)}
+                        className="text-primary focus:ring-primary"
+                      />
+                      <Label htmlFor="custom-post-summary" className="text-sm cursor-pointer">
+                        Use Custom Post
+                      </Label>
+                    </div>
+                  </div>
+                  
+                  {/* Generated Post Status or Custom Post Input */}
+                  {!useCustomPostForSummary ? (
+                    !post ? (
+                      <div className="text-center py-4 text-muted-foreground border rounded-lg bg-muted/30">
+                        <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                        <p className="text-sm">No generated post available</p>
+                        <p className="text-xs mt-1">Generate a post first or switch to "Use Custom Post"</p>
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-muted/30 rounded-lg border">
+                        <p className="text-xs text-muted-foreground mb-1">Generated Post Preview:</p>
+                        <p className="text-sm line-clamp-3">{post}</p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Paste Your Post Content</Label>
+                      <Textarea
+                        placeholder="Paste your existing post content here to generate a summary..."
+                        value={customPostContentForSummary}
+                        onChange={(e) => setCustomPostContentForSummary(e.target.value)}
+                        className="min-h-[120px] resize-none"
+                        maxLength={2000}
+                      />
+                      <div className="flex justify-between items-center">
+                        <p className="text-xs text-muted-foreground">
+                          Paste content from any social media platform
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {customPostContentForSummary.length}/2000
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Show summary generation only if conditions are met */}
+                {((!useCustomPostForSummary && post) || (useCustomPostForSummary && customPostContentForSummary.trim())) && (
+                  <div className="space-y-4">
                     <Button
                       onClick={handleGenerateSummary}
                       disabled={isSummarizing}
-                      size="sm"
-                      variant="outline"
+                      className="w-full"
                     >
                       {isSummarizing ? (
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Generating Summary...
+                        </>
                       ) : (
-                        <Sparkles className="w-4 h-4 mr-2" />
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Generate Summary
+                        </>
                       )}
-                      {isSummarizing ? "Generating..." : "Generate Summary"}
                     </Button>
-                  </div>
 
                   {summary ? (
                     <Card>
@@ -862,15 +1026,20 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
                   <div className="grid grid-cols-2 gap-4 text-xs">
                     <Card className="p-3">
                       <h4 className="font-medium mb-2">Word Count</h4>
-                      <p className="text-2xl font-bold text-primary">{post.split(/\s+/).length}</p>
+                      <p className="text-2xl font-bold text-primary">
+                        {(useCustomPostForSummary ? customPostContentForSummary : post).split(/\s+/).filter(word => word.length > 0).length}
+                      </p>
                     </Card>
                     <Card className="p-3">
                       <h4 className="font-medium mb-2">Character Count</h4>
-                      <p className="text-2xl font-bold text-primary">{post.length}</p>
+                      <p className="text-2xl font-bold text-primary">
+                        {(useCustomPostForSummary ? customPostContentForSummary : post).length}
+                      </p>
                     </Card>
                   </div>
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </TabsContent>
 
             {/* Overview Tab */}
