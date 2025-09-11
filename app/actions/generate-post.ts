@@ -33,7 +33,50 @@ export interface GeneratePostParams {
   provider: "groq" | "gemini" | "openai" | "anthropic"
   apiKey?: string
   model?: string
-  persona?: string // Add persona parameter
+  persona?: {
+    name: string
+    rawContent: string
+    instructions?: string
+    sentiment?: {
+      positive: number
+      negative: number
+      neutral: number
+      dominant: string
+      keywords?: string[]
+      styleCharacteristics?: {
+        avgSentenceLength: number
+        usesEmojis: boolean
+        usesHashtags: boolean
+        formalityLevel: 'formal' | 'casual' | 'mixed'
+        punctuationStyle: string[]
+        writingPatterns?: {
+          contractionsUsed: string[]
+          uniquePhrases: string[]
+          sentenceStarters: string[]
+          sentenceEnders: string[]
+          vocabularyLevel: 'simple' | 'intermediate' | 'advanced' | 'mixed'
+          personalPronouns: string[]
+          transitionWords: string[]
+          questionPatterns: string[]
+          exclamationPatterns: string[]
+        }
+        formattingPatterns?: {
+          bulletStyles: string[]
+          headerStyles: string[]
+          emphasisPatterns: string[]
+          listStructures: string[]
+          specialCharacters: string[]
+          linkPatterns: string[]
+          calloutPatterns: string[]
+          indentationStyle: string
+          usesBoldUnicode: boolean
+          usesMarkdownSyntax: boolean
+          usesHTMLElements: boolean
+          structuralMarkers: string[]
+        }
+      }
+    }
+  } // Updated to accept persona data object
 }
 
 // Update the GenerateContentDiagramParams interface
@@ -83,16 +126,70 @@ export async function generatePost({
     // Get persona training data if persona is specified
     let personaTrainingData = ""
     let personaInstructions = ""
-    if (persona && typeof window !== "undefined") {
-      try {
-        const { getPersonaTrainingDataWithType } = await import("@/lib/persona-training")
-        const personaData = getPersonaTrainingDataWithType(persona)
-        if (personaData) {
-          personaTrainingData = personaData.rawContent
-          personaInstructions = personaData.instructions || ""
+    let sentimentContext = ""
+    let styleGuidance = ""
+    let patternGuidance = ""
+    if (persona) {
+      personaTrainingData = persona.rawContent
+      personaInstructions = persona.instructions || ""
+      if (persona.sentiment) {
+        sentimentContext = `\n\nSentiment Profile: This persona tends to be ${persona.sentiment.dominant} (${persona.sentiment.positive}% positive, ${persona.sentiment.negative}% negative, ${persona.sentiment.neutral}% neutral). Match this emotional tone in your writing.`
+        
+        if (persona.sentiment.styleCharacteristics) {
+          const style = persona.sentiment.styleCharacteristics
+          styleGuidance = `\n\nStyle Characteristics to Match:
+- Average sentence length: ${style.avgSentenceLength} words
+- Formality level: ${style.formalityLevel}
+- Uses emojis: ${style.usesEmojis ? 'Yes' : 'No'}
+- Uses hashtags: ${style.usesHashtags ? 'Yes' : 'No'}
+- Punctuation patterns: ${style.punctuationStyle.join(', ') || 'standard'}
+`
+
+          if (style.writingPatterns) {
+            const patterns = style.writingPatterns
+            patternGuidance = `\n\nEXACT WRITING PATTERNS TO REPLICATE:
+${patterns.contractionsUsed.length > 0 ? `- Use these contractions: ${patterns.contractionsUsed.join(', ')}` : ''}
+${patterns.uniquePhrases.length > 0 ? `- Incorporate similar phrases to: "${patterns.uniquePhrases.join('", "')}"` : ''}
+${patterns.sentenceStarters.length > 0 ? `- Start sentences like: "${patterns.sentenceStarters.join('", "')}"` : ''}
+${patterns.sentenceEnders.length > 0 ? `- End sentences like: "${patterns.sentenceEnders.join('", "')}"` : ''}
+- Vocabulary level: ${patterns.vocabularyLevel}
+${patterns.personalPronouns.length > 0 ? `- Use pronouns: ${patterns.personalPronouns.join(', ')}` : ''}
+${patterns.transitionWords.length > 0 ? `- Use transitions: ${patterns.transitionWords.join(', ')}` : ''}
+${patterns.questionPatterns.length > 0 ? `- Ask questions like: "${patterns.questionPatterns.join('", "')}"` : ''}
+${patterns.exclamationPatterns.length > 0 ? `- Use exclamations like: "${patterns.exclamationPatterns.join('", "')}"` : ''}
+`
+          }
+
+          if (style.formattingPatterns) {
+            const formatting = style.formattingPatterns
+            const formattingGuidance = `\n\nFORMATTING PATTERNS TO REPLICATE:
+${formatting.bulletStyles.length > 0 ? `- Use these bullet styles: ${formatting.bulletStyles.join(', ')}` : ''}
+${formatting.headerStyles.length > 0 ? `- Header styles: ${formatting.headerStyles.join(', ')}` : ''}
+${formatting.emphasisPatterns.length > 0 ? `- Emphasis patterns: ${formatting.emphasisPatterns.join(', ')}` : ''}
+${formatting.listStructures.length > 0 ? `- List structures: ${formatting.listStructures.join(', ')}` : ''}
+${formatting.specialCharacters.length > 0 ? `- Special characters/emojis: ${formatting.specialCharacters.slice(0, 15).join(' ')}` : ''}
+${formatting.linkPatterns.length > 0 ? `- Link formatting: ${formatting.linkPatterns.join(', ')}` : ''}
+${formatting.calloutPatterns.length > 0 ? `- Callout patterns: ${formatting.calloutPatterns.join(', ')}` : ''}
+${formatting.structuralMarkers.length > 0 ? `- Section separators: ${formatting.structuralMarkers.join(', ')}` : ''}
+- Indentation style: ${formatting.indentationStyle}
+- Uses bold Unicode formatting: ${formatting.usesBoldUnicode ? 'Yes' : 'No'}
+- Uses Markdown syntax: ${formatting.usesMarkdownSyntax ? 'Yes' : 'No'}
+- Uses HTML elements: ${formatting.usesHTMLElements ? 'Yes' : 'No'}
+
+CRITICAL FORMATTING REQUIREMENTS:
+${formatting.usesBoldUnicode ? '✅ Use Unicode bold formatting (𝗕𝗼𝗹𝗱 text) for headers and emphasis' : ''}
+${formatting.bulletStyles.includes('•') ? '✅ Use bullet points with • symbol' : ''}
+${formatting.bulletStyles.includes('✦') ? '✅ Use special bullet points with ✦ symbol' : ''}
+${formatting.bulletStyles.includes('→') ? '✅ Use arrow bullets with → symbol' : ''}
+${formatting.emphasisPatterns.includes('double-asterisk') ? '✅ Use **bold text** for emphasis' : ''}
+${formatting.listStructures.includes('bullet-lists') ? '✅ Structure content with bullet point lists' : ''}
+${formatting.listStructures.includes('numbered-lists') ? '✅ Use numbered lists where appropriate' : ''}
+${formatting.specialCharacters.length > 0 ? '✅ Include relevant emojis and symbols naturally' : ''}
+${formatting.structuralMarkers.includes('triple-dash') ? '✅ Use --- for section breaks' : ''}
+`
+            patternGuidance += formattingGuidance
+          }
         }
-      } catch (error) {
-        console.error("Error loading persona data:", error)
       }
     }
 
@@ -182,15 +279,60 @@ ${personaTrainingData ? "2. Follow the persona style and instructions provided b
     if (personaTrainingData) {
       prompt += `
 
-PERSONA INSTRUCTIONS:
-${personaInstructions ? `Follow these specific instructions: ${personaInstructions}` : "Use the writing style demonstrated in the examples below."}
+PERSONA STYLE ANALYSIS & APPLICATION:
+${personaInstructions ? `Custom Instructions: ${personaInstructions}` : ""}${sentimentContext}${styleGuidance}${patternGuidance}
 
-WRITING STYLE REFERENCE:
-The following are examples of the desired writing style and tone. Study these examples carefully and mimic the writing patterns, vocabulary choices, sentence structure, and overall voice:
+CRITICAL: The following examples are for STYLE LEARNING ONLY. Do NOT copy, quote, or reuse any content from these examples. Instead, analyze and adopt their writing characteristics:
 
+WRITING STYLE EXAMPLES:
 ${personaTrainingData}
 
-Please generate the ${platform} post using the same writing style, tone, and voice as demonstrated in the examples above. Match the personality, vocabulary, and communication patterns while adapting the content for ${platform}.`
+STYLE ANALYSIS TASKS:
+1. Analyze the sentence structure patterns (short vs long sentences, punctuation style)
+2. Identify vocabulary choices (formal/casual, technical/simple, unique expressions)
+3. Note the tone and personality (enthusiastic, professional, conversational, humorous)
+4. Observe formatting patterns (use of emojis, line breaks, capitalization)
+5. Study how ideas are presented and organized
+6. Notice the level of detail and explanation style
+
+CONTENT CREATION REQUIREMENTS:
+Write about: "${content}"
+
+STEP-BY-STEP APPROACH:
+1. Read the source content: "${content}"
+2. Study the writing patterns provided above
+3. Write COMPLETELY NEW content about the source material
+4. Apply the exact writing patterns while discussing the new topic
+
+MANDATORY STYLE MATCHING:
+- Use the EXACT sentence length patterns shown
+- Copy the formality level and vocabulary complexity
+- Replicate the punctuation style precisely
+- Use similar contractions and phrase structures
+- Match the pronoun usage patterns
+- Apply the same transition word style
+- Mirror the question and exclamation patterns
+- Maintain the same emotional tone
+
+FORBIDDEN ACTIONS:
+❌ Copying ANY content from the training examples
+❌ Mentioning topics from the training examples
+❌ Using phrases like "as I mentioned" or "like I said"
+❌ Writing in a generic AI style
+❌ Ignoring the specific patterns provided
+
+REQUIRED ACTIONS:
+✅ Write about "${content}" ONLY
+✅ Sound exactly like the person who wrote the training examples
+✅ Use their exact writing rhythm and style
+✅ Apply their vocabulary choices and sentence structures
+✅ Match their personality perfectly
+✅ Create content that feels authentically human and personal
+
+QUALITY CHECK:
+The final post should read as if the same person who wrote the training examples sat down and wrote about "${content}" in their natural style. It should NOT sound like AI trying to copy a style - it should BE that style applied to new content.
+
+Generate the ${platform} post now:`
     }
 
     prompt += `

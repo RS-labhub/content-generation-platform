@@ -26,6 +26,10 @@ import {
   User,
   Lightbulb,
   Calendar,
+  BarChart3,
+  Heart,
+  Frown,
+  Meh,
 } from "lucide-react"
 import {
   savePersonaTrainingDataWithType,
@@ -34,6 +38,8 @@ import {
   removePersonaTrainingData,
   downloadPersonaData,
   uploadPersonaData,
+  analyzeSentiment,
+  createPersonaFromText,
 } from "@/lib/persona-training"
 import { useToast } from "@/hooks/use-toast"
 
@@ -59,8 +65,22 @@ export function PersonaTrainingDialog({
   const [selectedPersona, setSelectedPersona] = useState<string>("")
   const [isEditing, setIsEditing] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [currentSentiment, setCurrentSentiment] = useState<any>(null)
+  const [showQuickCreate, setShowQuickCreate] = useState(false)
+  const [quickCreateName, setQuickCreateName] = useState("")
+  const [quickCreateContent, setQuickCreateContent] = useState("")
 
   const { toast } = useToast()
+
+  // Analyze sentiment when training content changes
+  useEffect(() => {
+    if (trainingContent.trim()) {
+      const sentiment = analyzeSentiment(trainingContent)
+      setCurrentSentiment(sentiment)
+    } else {
+      setCurrentSentiment(null)
+    }
+  }, [trainingContent])
 
   // Load existing personas when dialog opens
   useEffect(() => {
@@ -245,13 +265,19 @@ export function PersonaTrainingDialog({
     setIsDragOver(false)
 
     const files = Array.from(e.dataTransfer.files).filter(
-      (file) => file.type === "application/json" || file.name.endsWith(".json"),
+      (file) => 
+        file.type === "application/json" || 
+        file.name.endsWith(".json") ||
+        file.type === "text/plain" ||
+        file.name.endsWith(".txt") ||
+        file.type === "text/markdown" ||
+        file.name.endsWith(".md")
     )
 
     if (files.length === 0) {
       toast({
         title: "Invalid Files",
-        description: "Please drop JSON persona backup files only.",
+        description: "Please drop JSON, TXT, or MD files only.",
         variant: "destructive",
       })
       return
@@ -309,12 +335,50 @@ export function PersonaTrainingDialog({
     setContentType("mixed")
     setSelectedPersona("")
     setIsEditing(false)
+    setShowQuickCreate(false)
+    setQuickCreateName("")
+    setQuickCreateContent("")
   }
 
   const editPersona = (persona: any) => {
     setSelectedPersona(persona.name)
     loadPersonaData(persona.name)
     setIsEditing(true)
+    setShowQuickCreate(false)
+  }
+
+  const handleQuickCreate = () => {
+    if (!quickCreateName.trim() || !quickCreateContent.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please provide both name and content for quick creation.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      createPersonaFromText(quickCreateName.trim(), quickCreateContent.trim(), contentType)
+      toast({
+        title: "Persona Created",
+        description: `${quickCreateName} persona has been created from text content.`,
+      })
+      
+      if (onPersonaAdded) {
+        onPersonaAdded(quickCreateName.trim().toLowerCase())
+      }
+      
+      loadExistingPersonas()
+      setShowQuickCreate(false)
+      setQuickCreateName("")
+      setQuickCreateContent("")
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to create persona from text.",
+        variant: "destructive",
+      })
+    }
   }
 
   // Add this function to handle bulk export
@@ -397,10 +461,19 @@ export function PersonaTrainingDialog({
                 <Plus className="w-4 h-4 mr-2" />
                 New Persona
               </Button>
+              <Button 
+                onClick={() => setShowQuickCreate(!showQuickCreate)} 
+                variant="outline" 
+                size="sm"
+                className={showQuickCreate ? "bg-blue-50 border-blue-300" : ""}
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Quick Create
+              </Button>
               <div className="relative">
                 <input
                   type="file"
-                  accept=".json"
+                  accept=".json,.txt,.md"
                   multiple
                   onChange={handleUpload}
                   disabled={isLoading}
@@ -432,10 +505,71 @@ export function PersonaTrainingDialog({
             >
               <Upload className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
               <p className="text-sm font-medium mb-1">
-                {isDragOver ? "Drop persona files here" : "Drag & drop persona files"}
+                {isDragOver ? "Drop files here" : "Drag & drop training files"}
               </p>
-              <p className="text-xs text-muted-foreground">Supports multiple JSON files • Max 10MB per file</p>
+              <p className="text-xs text-muted-foreground">Supports JSON, TXT & MD files • Max 10MB per file</p>
             </div>
+
+            {/* Quick Create Section */}
+            {showQuickCreate && (
+              <div className="border rounded-lg p-4 bg-blue-50/50 border-blue-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText className="w-4 h-4 text-blue-600" />
+                  <h4 className="font-medium text-blue-800">Quick Create from Text</h4>
+                </div>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Persona Name</Label>
+                      <Input
+                        placeholder="e.g., my-writing-style"
+                        value={quickCreateName}
+                        onChange={(e) => setQuickCreateName(e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Content Type</Label>
+                      <Select value={contentType} onValueChange={(value: "posts" | "blogs" | "mixed") => setContentType(value)}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mixed">Mixed</SelectItem>
+                          <SelectItem value="posts">Posts</SelectItem>
+                          <SelectItem value="blogs">Blogs</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Paste your writing samples here</Label>
+                    <Textarea
+                      placeholder="Paste your writing content here... Separate different samples with '---' or '==='"
+                      value={quickCreateContent}
+                      onChange={(e) => setQuickCreateContent(e.target.value)}
+                      className="min-h-[120px] text-sm font-mono resize-none"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={() => setShowQuickCreate(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      onClick={handleQuickCreate}
+                      disabled={!quickCreateName.trim() || !quickCreateContent.trim()}
+                    >
+                      Create Persona
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Existing Personas */}
             {existingPersonas.length > 0 && (
@@ -474,6 +608,12 @@ export function PersonaTrainingDialog({
                                   <span className="flex items-center gap-1 text-blue-600">
                                     <Lightbulb className="w-3 h-3" />
                                     Instructions
+                                  </span>
+                                )}
+                                {persona.sentiment && (
+                                  <span className="flex items-center gap-1 text-purple-600">
+                                    <BarChart3 className="w-3 h-3" />
+                                    {persona.sentiment.dominant} tone • {persona.sentiment.styleCharacteristics?.formalityLevel || 'mixed'} style
                                   </span>
                                 )}
                               </div>
@@ -606,6 +746,61 @@ export function PersonaTrainingDialog({
                     <span>{trainingContent.split(/---+|===+/).length} samples detected</span>
                   </div>
                 </div>
+                <div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded">
+                  <strong>💡 Tip:</strong> You can also upload .txt or .md files using the import buttons above, or use Quick Create for faster setup.
+                </div>
+                
+                {/* Sentiment Analysis Display */}
+                {currentSentiment && (
+                  <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BarChart3 className="w-4 h-4 text-purple-600" />
+                      <span className="text-sm font-medium text-purple-800">Sentiment Analysis</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mb-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Heart className="w-3 h-3 text-green-600" />
+                        <span className="text-green-700">Positive: {currentSentiment.positive}%</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Frown className="w-3 h-3 text-red-600" />
+                        <span className="text-red-700">Negative: {currentSentiment.negative}%</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <Meh className="w-3 h-3 text-gray-600" />
+                        <span className="text-gray-700">Neutral: {currentSentiment.neutral}%</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-purple-700">
+                      <strong>Dominant tone:</strong> {currentSentiment.dominant}
+                      {currentSentiment.keywords.length > 0 && (
+                        <span> • <strong>Key words:</strong> {currentSentiment.keywords.slice(0, 5).join(', ')}</span>
+                      )}
+                    </div>
+                    {currentSentiment.styleCharacteristics && (
+                      <div className="text-xs text-purple-600 mt-1 space-y-1">
+                        <div className="grid grid-cols-2 gap-2">
+                          <span>📝 {currentSentiment.styleCharacteristics.formalityLevel} style</span>
+                          <span>📏 {currentSentiment.styleCharacteristics.avgSentenceLength}w avg</span>
+                          {currentSentiment.styleCharacteristics.usesEmojis && <span>😊 Uses emojis</span>}
+                          {currentSentiment.styleCharacteristics.usesHashtags && <span># Uses hashtags</span>}
+                        </div>
+                        {currentSentiment.styleCharacteristics.writingPatterns && (
+                          <div className="mt-2 p-2 bg-white/50 rounded text-xs">
+                            <div className="font-medium text-purple-700 mb-1">Writing Patterns Detected:</div>
+                            {currentSentiment.styleCharacteristics.writingPatterns.contractionsUsed.length > 0 && (
+                              <div>• Contractions: {currentSentiment.styleCharacteristics.writingPatterns.contractionsUsed.slice(0, 3).join(', ')}</div>
+                            )}
+                            {currentSentiment.styleCharacteristics.writingPatterns.uniquePhrases.length > 0 && (
+                              <div>• Unique phrases: {currentSentiment.styleCharacteristics.writingPatterns.uniquePhrases.slice(0, 2).join(', ')}</div>
+                            )}
+                            <div>• Vocabulary: {currentSentiment.styleCharacteristics.writingPatterns.vocabularyLevel}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

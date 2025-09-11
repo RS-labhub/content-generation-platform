@@ -23,6 +23,7 @@ import { GeneratedDiagramDisplay } from "@/components/generated-diagram-display"
 import { MermaidResources } from "@/components/mermaid-resources"
 import { Footer } from "@/components/footer"
 import { PersonaTrainingDialog } from "@/components/persona-training-dialog"
+import { getPersonaTrainingDataWithType } from "@/lib/persona-training"
 
 // Define all providers including the new ones
 const allProviders: APIProvider[] = [
@@ -233,6 +234,20 @@ export default function ContentPostingPlatform() {
     setIsGenerating(true)
 
     try {
+      // Get persona data if selected
+      let personaData = undefined
+      if (hasPersona) {
+        const persona = getPersonaTrainingDataWithType(selectedPersona)
+        if (persona) {
+          personaData = {
+            name: persona.name,
+            rawContent: persona.rawContent,
+            instructions: persona.instructions,
+            sentiment: persona.sentiment
+          }
+        }
+      }
+
       const result = await generatePost({
         platform: context.platform,
         style: context.style,
@@ -241,7 +256,7 @@ export default function ContentPostingPlatform() {
         provider: provider,
         apiKey: getActiveApiKey() || undefined,
         model: activeModel || undefined,
-        persona: hasPersona ? selectedPersona : undefined,
+        persona: personaData,
       })
 
       if (result.success && result.post) {
@@ -411,6 +426,7 @@ export default function ContentPostingPlatform() {
                     selectedPersona={selectedPersona !== "default" ? selectedPersona : undefined}
                     copiedStates={copiedStates}
                     onCopy={copyToClipboard}
+                    onPostUpdate={setGeneratedPost}
                   />
 
                   <AIProviderSelection
