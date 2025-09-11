@@ -24,6 +24,8 @@ import { MermaidResources } from "@/components/mermaid-resources"
 import { Footer } from "@/components/footer"
 import { PersonaTrainingDialog } from "@/components/persona-training-dialog"
 import { getPersonaTrainingDataWithType } from "@/lib/persona-training"
+import { ContextManagerDialog } from "@/components/context-manager-dialog"
+import { getContextData } from "@/lib/context-manager"
 
 // Define all providers including the new ones
 const allProviders: APIProvider[] = [
@@ -77,6 +79,7 @@ interface PostContext {
   platform: string
   style: string
   keywords: string
+  contentType?: string
 }
 
 export default function ContentPostingPlatform() {
@@ -100,6 +103,8 @@ export default function ContentPostingPlatform() {
   const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({})
   const [selectedPersona, setSelectedPersona] = useState<string>("default")
   const [showPersonaDialog, setShowPersonaDialog] = useState(false)
+  const [selectedContext, setSelectedContext] = useState<string>("")
+  const [showContextDialog, setShowContextDialog] = useState(false)
   const { toast } = useToast()
 
   // Load saved data on mount
@@ -108,6 +113,7 @@ export default function ContentPostingPlatform() {
     const savedContent = localStorage.getItem("postContent")
     const savedDiagramContent = localStorage.getItem("diagramContent")
     const savedPersona = localStorage.getItem("selectedPersona")
+    const savedContextSelection = localStorage.getItem("selectedContext")
 
     if (savedContext) {
       try {
@@ -116,6 +122,7 @@ export default function ContentPostingPlatform() {
           platform: parsed.platform || "",
           style: parsed.style || "",
           keywords: parsed.keywords || "",
+          contentType: parsed.contentType || undefined,
         })
       } catch (error) {
         console.error("Error parsing saved context:", error)
@@ -129,6 +136,9 @@ export default function ContentPostingPlatform() {
     }
     if (savedPersona) {
       setSelectedPersona(savedPersona || "default")
+    }
+    if (savedContextSelection) {
+      setSelectedContext(savedContextSelection || "")
     }
   }, [])
 
@@ -173,6 +183,11 @@ export default function ContentPostingPlatform() {
   useEffect(() => {
     localStorage.setItem("selectedPersona", selectedPersona)
   }, [selectedPersona])
+
+  // Save context in real-time
+  useEffect(() => {
+    localStorage.setItem("selectedContext", selectedContext)
+  }, [selectedContext])
 
   // Helper functions
   const handleProviderChange = (providerId: string, keyId?: string) => {
@@ -248,22 +263,33 @@ export default function ContentPostingPlatform() {
         }
       }
 
+      // Get context data if selected
+      let contextData = undefined
+      if (selectedContext) {
+        const context = getContextData(selectedContext)
+        if (context) {
+          contextData = context
+        }
+      }
+
       const result = await generatePost({
         platform: context.platform,
         style: context.style,
         keywords: context.keywords,
         content: content,
+        contentType: context.contentType,
         provider: provider,
         apiKey: getActiveApiKey() || undefined,
         model: activeModel || undefined,
         persona: personaData,
+        context: contextData,
       })
 
       if (result.success && result.post) {
         setGeneratedPost(result.post)
         toast({
           title: "Post Generated!",
-          description: `Successfully generated ${context.platform} post using ${activeProvider.name}${hasPersona ? ` with ${selectedPersona} persona` : ""}.`,
+          description: `Successfully generated ${context.platform} post using ${activeProvider.name}${hasPersona ? ` with ${selectedPersona} persona` : ""}${selectedContext ? ` and ${selectedContext} context` : ""}.`,
         })
       } else {
         toast({
@@ -398,6 +424,9 @@ export default function ContentPostingPlatform() {
                     selectedPersona={selectedPersona}
                     onPersonaChange={setSelectedPersona}
                     onShowPersonaDialog={() => setShowPersonaDialog(true)}
+                    selectedBrandContext={selectedContext}
+                    onBrandContextChange={setSelectedContext}
+                    onShowContextDialog={() => setShowContextDialog(true)}
                   />
 
                   <SourceContentInput content={content} onContentChange={setContent} />
@@ -520,6 +549,27 @@ export default function ContentPostingPlatform() {
           })
         }}
         currentPersona={selectedPersona !== "default" ? selectedPersona : undefined}
+      />
+      <ContextManagerDialog
+        open={showContextDialog}
+        onOpenChange={(open) => {
+          setShowContextDialog(open)
+          // Refresh contexts when dialog closes
+          if (!open) {
+            // Trigger contexts refresh
+            window.dispatchEvent(new Event("contexts-updated"))
+          }
+        }}
+        onContextAdded={(contextName) => {
+          setSelectedContext(contextName)
+          // Trigger contexts refresh
+          window.dispatchEvent(new Event("contexts-updated"))
+          toast({
+            title: "Context Added",
+            description: `${contextName} context is now selected for content generation.`,
+          })
+        }}
+        currentContext={selectedContext || undefined}
       />
       <Analytics />
     </>

@@ -6,14 +6,16 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Brain, Settings, Plus, User, RefreshCw } from "lucide-react"
+import { Brain, Settings, Plus, User, RefreshCw, Building2 } from "lucide-react"
 import { getAllPersonaData, getPersonaTrainingDataWithType } from "@/lib/persona-training"
+import { getAllContextData, getContextData } from "@/lib/context-manager"
 import { useEffect, useState } from "react"
 
 interface PostContext {
   platform: string
   style: string
   keywords: string
+  contentType?: string
 }
 
 interface PostContextFormProps {
@@ -22,6 +24,9 @@ interface PostContextFormProps {
   selectedPersona: string
   onPersonaChange: (persona: string) => void
   onShowPersonaDialog: () => void
+  selectedBrandContext?: string
+  onBrandContextChange?: (context: string) => void
+  onShowContextDialog?: () => void
 }
 
 export function PostContextForm({
@@ -30,10 +35,15 @@ export function PostContextForm({
   selectedPersona,
   onPersonaChange,
   onShowPersonaDialog,
+  selectedBrandContext = "",
+  onBrandContextChange,
+  onShowContextDialog,
 }: PostContextFormProps) {
   const [personas, setPersonas] = useState<any[]>([])
   const [selectedPersonaData, setSelectedPersonaData] = useState<any>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [contexts, setContexts] = useState<any[]>([])
+  const [selectedContextData, setSelectedContextData] = useState<any>(null)
 
   const loadPersonas = () => {
     try {
@@ -48,8 +58,18 @@ export function PostContextForm({
     }
   }
 
+  const loadContexts = () => {
+    try {
+      const allContexts = getAllContextData()
+      setContexts(allContexts)
+    } catch (error) {
+      console.error("Error loading contexts:", error)
+    }
+  }
+
   useEffect(() => {
     loadPersonas()
+    loadContexts()
 
     // Listen for persona updates
     const handlePersonasUpdated = () => {
@@ -57,10 +77,18 @@ export function PostContextForm({
       loadPersonas()
     }
 
+    // Listen for context updates
+    const handleContextsUpdated = () => {
+      console.log("Contexts updated event received") // Debug log
+      loadContexts()
+    }
+
     window.addEventListener("personas-updated", handlePersonasUpdated)
+    window.addEventListener("contexts-updated", handleContextsUpdated)
 
     return () => {
       window.removeEventListener("personas-updated", handlePersonasUpdated)
+      window.removeEventListener("contexts-updated", handleContextsUpdated)
     }
   }, [])
 
@@ -73,6 +101,16 @@ export function PostContextForm({
       setSelectedPersonaData(null)
     }
   }, [selectedPersona])
+
+  useEffect(() => {
+    if (selectedBrandContext) {
+      const contextData = getContextData(selectedBrandContext)
+      console.log("Selected context data:", contextData) // Debug log
+      setSelectedContextData(contextData)
+    } else {
+      setSelectedContextData(null)
+    }
+  }, [selectedBrandContext])
 
   const hasPersonaSelected = selectedPersona && selectedPersona !== "default"
 
@@ -104,6 +142,36 @@ export function PostContextForm({
               <SelectItem value="threads">Threads</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Content Type Selection */}
+        <div className="space-y-2">
+          <Label htmlFor="content-type" className="text-sm font-medium">
+            Content Type (Optional)
+          </Label>
+          <Select value={context.contentType || "none"} onValueChange={(value) => onContextChange({ ...context, contentType: value === "none" ? undefined : value })}>
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder="Select content type (optional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="text-muted-foreground">No specific type</span>
+              </SelectItem>
+              <SelectItem value="product-announcement">🚀 Product Announcement</SelectItem>
+              <SelectItem value="thought-leadership">💡 Thought Leadership</SelectItem>
+              <SelectItem value="company-update">📢 Company Update</SelectItem>
+              <SelectItem value="customer-story">👥 Customer Success Story</SelectItem>
+              <SelectItem value="educational">📚 Educational Content</SelectItem>
+              <SelectItem value="behind-the-scenes">🎬 Behind the Scenes</SelectItem>
+              <SelectItem value="industry-news">📰 Industry News/Commentary</SelectItem>
+              <SelectItem value="event-promotion">🎟️ Event Promotion</SelectItem>
+              <SelectItem value="team-spotlight">⭐ Team Spotlight</SelectItem>
+              <SelectItem value="milestone">🎯 Milestone/Achievement</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Optional: Helps structure the content for specific purposes
+          </p>
         </div>
 
         {/* Persona Selection */}
@@ -180,6 +248,90 @@ export function PostContextForm({
             </div>
           )}
         </div>
+
+        {/* Brand/Company Context Selection */}
+        {onBrandContextChange && onShowContextDialog && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="context-select" className="text-sm font-medium flex items-center gap-2">
+                <Building2 className="w-4 h-4" />
+                Brand Context (Optional)
+              </Label>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={loadContexts} className="h-7 text-xs">
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Refresh
+                </Button>
+                <Button variant="ghost" size="sm" onClick={onShowContextDialog} className="h-7 text-xs">
+                  <Settings className="w-3 h-3 mr-1" />
+                  Manage
+                </Button>
+              </div>
+            </div>
+            <Select value={selectedBrandContext || "none"} onValueChange={(value) => onBrandContextChange?.(value === "none" ? "" : value)}>
+              <SelectTrigger className="h-10">
+                <SelectValue placeholder="Select brand/company context (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded-full bg-muted border-2 border-muted-foreground/20" />
+                    <span>No Context</span>
+                  </div>
+                </SelectItem>
+                {contexts.map((context) => (
+                  <SelectItem key={context.name} value={context.name}>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1 bg-blue-100 rounded-sm">
+                        <Building2 className="w-3 h-3 text-blue-600" />
+                      </div>
+                      <span>{context.name}</span>
+                      <Badge variant="outline" className="text-xs ml-auto capitalize">
+                        {context.category}
+                      </Badge>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Show context details if selected */}
+            {selectedContextData && (
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <span className="font-medium text-sm">{selectedContextData.name}</span>
+                  <Badge variant="outline" className="text-xs capitalize">
+                    {selectedContextData.category}
+                  </Badge>
+                </div>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p>{selectedContextData.data.rawContent.length} characters of context data</p>
+                  {selectedContextData.description && (
+                    <p className="text-blue-600">"{selectedContextData.description}"</p>
+                  )}
+                  {selectedContextData.analysis?.keyTopics && (
+                    <p className="text-blue-600">
+                      Key topics: {selectedContextData.analysis.keyTopics.slice(0, 3).join(", ")}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Show create context option if no contexts exist */}
+            {contexts.length === 0 && (
+              <div className="p-3 border border-dashed rounded-lg text-center">
+                <Building2 className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                <p className="text-sm text-muted-foreground mb-2">No brand contexts created yet</p>
+                <Button variant="outline" size="sm" onClick={onShowContextDialog}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Your First Context
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Custom Style - only show if no persona is selected */}
         {!hasPersonaSelected && (

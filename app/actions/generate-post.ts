@@ -30,6 +30,7 @@ export interface GeneratePostParams {
   style: string
   keywords: string
   content: string
+  contentType?: string
   provider: "groq" | "gemini" | "openai" | "anthropic"
   apiKey?: string
   model?: string
@@ -77,6 +78,27 @@ export interface GeneratePostParams {
       }
     }
   } // Updated to accept persona data object
+  context?: {
+    name: string
+    description?: string
+    category: string
+    data: {
+      structured: Record<string, any>
+      rawContent: string
+      metadata: {
+        dataType: string
+        fileCount: number
+        totalSize: number
+        lastUpdated: string
+      }
+    }
+    analysis?: {
+      keyTopics: string[]
+      entities: string[]
+      dataCategories: string[]
+      contentSummary: string
+    }
+  } // Brand/company context data
 }
 
 // Update the GenerateContentDiagramParams interface
@@ -94,10 +116,12 @@ export async function generatePost({
   style,
   keywords,
   content,
+  contentType,
   provider,
   apiKey,
   model,
   persona,
+  context: contextData,
 }: GeneratePostParams) {
   try {
     let aiModel
@@ -255,6 +279,7 @@ You are an expert social media content creator. Generate a ${platform} post base
 Platform: ${platform}
 ${!personaTrainingData ? `Custom Style: ${style}` : ""}
 Keywords to emphasize: ${keywords}
+${contentType ? `Content Type: ${contentType}` : ""}
 
 Platform Guidelines: ${platformInfo.description}
 Length Requirement: ${platformInfo.maxLength}
@@ -268,6 +293,7 @@ Instructions:
 ${!personaTrainingData ? `2. Follow the custom style approach: "${style}"` : ""}
 ${personaTrainingData ? "2. Follow the persona style and instructions provided below" : ""}
 3. Emphasize and naturally incorporate these keywords: "${keywords}"
+${contentType ? `4. Structure the content as a ${contentType.replace('-', ' ')} - use appropriate format and tone for this content type` : ""}
 4. Respect the platform's ${platformInfo.maxLength} requirement
 5. Use a ${platformInfo.tone} tone
 6. Include relevant hashtags where appropriate for the platform
@@ -333,6 +359,38 @@ QUALITY CHECK:
 The final post should read as if the same person who wrote the training examples sat down and wrote about "${content}" in their natural style. It should NOT sound like AI trying to copy a style - it should BE that style applied to new content.
 
 Generate the ${platform} post now:`
+    }
+
+    // Add context data to the prompt if available
+    if (contextData) {
+      prompt += `
+
+BRAND/COMPANY CONTEXT INFORMATION:
+Context Name: ${contextData.name}
+Context Category: ${contextData.category}${contextData.description ? `
+Context Description: ${contextData.description}` : ""}
+
+BACKGROUND INFORMATION:
+${contextData.data.rawContent}
+${contextData.analysis?.contentSummary ? `
+Key Summary: ${contextData.analysis.contentSummary}` : ""}
+${contextData.analysis?.keyTopics ? `
+Key Topics: ${contextData.analysis.keyTopics.join(", ")}` : ""}
+${contextData.analysis?.entities ? `
+Key Entities: ${contextData.analysis.entities.join(", ")}` : ""}
+
+CONTEXT APPLICATION REQUIREMENTS:
+1. Use the above brand/company information to create relevant, targeted content
+2. Ensure all claims and information are consistent with the provided context
+3. Reference specific products, services, values, or information from the context when relevant
+4. Make the content feel authentic to this brand/company
+5. Do NOT invent or assume information not provided in the context
+6. Use the context to add specificity and authenticity to your content
+7. Align the content with the brand's category (${contextData.category}) and focus
+
+CONTENT ALIGNMENT:
+Write content that reflects this ${contextData.category} context while discussing: "${content}"
+Make sure the post feels like it comes from someone who knows this company/brand intimately.`
     }
 
     prompt += `
