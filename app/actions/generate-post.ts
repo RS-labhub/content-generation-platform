@@ -110,6 +110,56 @@ export interface GenerateContentDiagramParams {
   model?: string
 }
 
+// Define the interface for LinkedIn Carousel generation
+export interface GenerateLinkedInCarouselParams {
+  platform: string
+  style: string
+  keywords: string
+  content: string
+  slideCount: number
+  includeIntro: boolean
+  includeOutro: boolean
+  carouselTheme: string
+  slideFormat: string
+  provider: "groq" | "gemini" | "openai" | "anthropic"
+  apiKey?: string
+  model?: string
+  persona?: {
+    name: string
+    rawContent: string
+    instructions?: string
+    sentiment?: {
+      positive: number
+      negative: number
+      neutral: number
+      dominant: string
+      keywords?: string[]
+      styleCharacteristics?: any
+    }
+  }
+  context?: {
+    name: string
+    description?: string
+    category: string
+    data: {
+      structured: Record<string, any>
+      rawContent: string
+      metadata: {
+        dataType: string
+        fileCount: number
+        totalSize: number
+        lastUpdated: string
+      }
+    }
+    analysis?: {
+      keyTopics: string[]
+      entities: string[]
+      dataCategories: string[]
+      contentSummary: string
+    }
+  }
+}
+
 // Update the generatePost function to handle new providers and use persona data
 export async function generatePost({
   platform,

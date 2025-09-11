@@ -157,6 +157,7 @@ export function PostContextForm({
               <SelectItem value="none">
                 <span className="text-muted-foreground">No specific type</span>
               </SelectItem>
+              <SelectItem value="linkedin-carousel">🔄 Carousel</SelectItem>
               <SelectItem value="product-announcement">🚀 Product Announcement</SelectItem>
               <SelectItem value="thought-leadership">💡 Thought Leadership</SelectItem>
               <SelectItem value="company-update">📢 Company Update</SelectItem>

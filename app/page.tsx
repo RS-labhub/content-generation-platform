@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Loader2, Sparkles, Zap, Brain, BarChart3Icon as Diagram3 } from "lucide-react"
+import { Loader2, Sparkles, Zap, Brain, BarChart3Icon as Diagram3, Layers } from "lucide-react"
 import { generatePost, generateContentDiagram } from "./actions/generate-post"
+import { generateLinkedInCarousel } from "./actions/generate-linkedin-carousel"
 import { useToast } from "@/hooks/use-toast"
 import { Analytics } from "@vercel/analytics/react"
 import { APIKeyDialog } from "@/components/api-key-dialog"
@@ -26,6 +27,8 @@ import { PersonaTrainingDialog } from "@/components/persona-training-dialog"
 import { getPersonaTrainingDataWithType } from "@/lib/persona-training"
 import { ContextManagerDialog } from "@/components/context-manager-dialog"
 import { getContextData } from "@/lib/context-manager"
+import { LinkedInCarouselConfig } from "@/components/linkedin-carousel-config"
+import { GeneratedCarouselDisplay } from "@/components/generated-carousel-display"
 
 // Define all providers including the new ones
 const allProviders: APIProvider[] = [
@@ -98,8 +101,17 @@ export default function ContentPostingPlatform() {
   const [showAPIKeyDialog, setShowAPIKeyDialog] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isGeneratingDiagram, setIsGeneratingDiagram] = useState(false)
+  const [isGeneratingCarousel, setIsGeneratingCarousel] = useState(false)
   const [generatedPost, setGeneratedPost] = useState<string>("")
   const [mermaidDiagram, setMermaidDiagram] = useState<string>("")
+  const [carouselContent, setCarouselContent] = useState<string[]>([])
+  const [carouselSettings, setCarouselSettings] = useState({
+    slideCount: 8,
+    includeIntro: true,
+    includeOutro: true,
+    carouselTheme: "professional",
+    slideFormat: "headline-body"
+  })
   const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({})
   const [selectedPersona, setSelectedPersona] = useState<string>("default")
   const [showPersonaDialog, setShowPersonaDialog] = useState(false)
@@ -364,6 +376,97 @@ export default function ContentPostingPlatform() {
     }
   }
 
+  const handleGenerateCarousel = async () => {
+    const hasPersona = selectedPersona && selectedPersona !== "default"
+
+    if (!context.platform || (!hasPersona && !context.style) || !content.trim()) {
+      toast({
+        title: "Missing Information",
+        description: hasPersona
+          ? "Please fill in platform and content fields."
+          : "Please fill in platform, style, and content fields.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (activeProvider.requiresKey && !activeKeyId) {
+      toast({
+        title: "API Key Required",
+        description: `Please add an API key for ${activeProvider.name}`,
+        variant: "destructive",
+      })
+      setShowAPIKeyDialog(true)
+      return
+    }
+
+    setIsGeneratingCarousel(true)
+
+    try {
+      // Get persona data if selected
+      let personaData = undefined
+      if (hasPersona) {
+        const persona = getPersonaTrainingDataWithType(selectedPersona)
+        if (persona) {
+          personaData = {
+            name: persona.name,
+            rawContent: persona.rawContent,
+            instructions: persona.instructions,
+            sentiment: persona.sentiment
+          }
+        }
+      }
+
+      // Get context data if selected
+      let contextData = undefined
+      if (selectedContext) {
+        const context = getContextData(selectedContext)
+        if (context) {
+          contextData = context
+        }
+      }
+
+      const result = await generateLinkedInCarousel({
+        platform: context.platform,
+        style: context.style,
+        keywords: context.keywords,
+        content: content,
+        slideCount: carouselSettings.slideCount,
+        includeIntro: carouselSettings.includeIntro,
+        includeOutro: carouselSettings.includeOutro,
+        carouselTheme: carouselSettings.carouselTheme,
+        slideFormat: carouselSettings.slideFormat,
+        provider: provider,
+        apiKey: getActiveApiKey() || undefined,
+        model: activeModel || undefined,
+        persona: personaData,
+        context: contextData,
+      })
+
+      if (result.success && result.carousel) {
+        setCarouselContent(result.carousel)
+        toast({
+          title: "Carousel Generated!",
+          description: `Successfully generated carousel using ${activeProvider.name}${hasPersona ? ` with ${selectedPersona} persona` : ""}${selectedContext ? ` and ${selectedContext} context` : ""}.`,
+        })
+      } else {
+        toast({
+          title: "Generation Failed",
+          description: result.error || "Failed to generate carousel.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingCarousel(false)
+    }
+  }
+
   const copyToClipboard = async (text: string, type = "default") => {
     try {
       await navigator.clipboard.writeText(text)
@@ -397,6 +500,14 @@ export default function ContentPostingPlatform() {
       window.open(url, "_blank")
     }
   }
+  
+  const handleCarouselUpdate = (updatedSlides: string[]) => {
+    setCarouselContent(updatedSlides);
+    toast({
+      title: "Carousel Updated",
+      description: "Your changes to the carousel slides have been saved.",
+    });
+  }
 
   return (
     <>
@@ -405,9 +516,12 @@ export default function ContentPostingPlatform() {
           <Header />
 
           <Tabs defaultValue="generate" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="generate" className="text-xs sm:text-sm">
                 Generate Post
+              </TabsTrigger>
+              <TabsTrigger value="carousel" className="text-xs sm:text-sm">
+                Carousel
               </TabsTrigger>
               <TabsTrigger value="diagram" className="text-xs sm:text-sm">
                 Mermaid Diagrams
@@ -456,6 +570,67 @@ export default function ContentPostingPlatform() {
                     copiedStates={copiedStates}
                     onCopy={copyToClipboard}
                     onPostUpdate={setGeneratedPost}
+                  />
+
+                  <AIProviderSelection
+                    allProviders={allProviders}
+                    activeProvider={activeProvider}
+                    activeModel={activeModel}
+                    provider={provider}
+                    onShowAPIKeyDialog={() => setShowAPIKeyDialog(true)}
+                    onProviderChange={handleProviderChange}
+                  />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="carousel" className="space-y-4 sm:space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+                {/* Left Column - Input */}
+                <div className="space-y-6">
+                  <PostContextForm
+                    context={context}
+                    onContextChange={setContext}
+                    selectedPersona={selectedPersona}
+                    onPersonaChange={setSelectedPersona}
+                    onShowPersonaDialog={() => setShowPersonaDialog(true)}
+                    selectedBrandContext={selectedContext}
+                    onBrandContextChange={setSelectedContext}
+                    onShowContextDialog={() => setShowContextDialog(true)}
+                  />
+
+                  <SourceContentInput content={content} onContentChange={setContent} />
+
+                  <Button onClick={handleGenerateCarousel} disabled={isGeneratingCarousel} className="w-full" size="lg">
+                    {isGeneratingCarousel ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Generating Carousel...
+                      </>
+                    ) : (
+                      <>
+                        <Layers className="mr-2 h-4 w-4" />
+                        Generate Carousel
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* Right Column - Output */}
+                <div className="space-y-4 sm:space-y-6">
+                  <GeneratedCarouselDisplay
+                    carouselContent={carouselContent}
+                    platform="LinkedIn"
+                    provider={provider}
+                    selectedPersona={selectedPersona !== "default" ? selectedPersona : undefined}
+                    copiedStates={copiedStates}
+                    onCopy={copyToClipboard}
+                    onCarouselUpdate={handleCarouselUpdate}
+                  />
+
+                  <LinkedInCarouselConfig 
+                    carouselSettings={carouselSettings}
+                    onCarouselSettingsChange={setCarouselSettings}
                   />
 
                   <AIProviderSelection
