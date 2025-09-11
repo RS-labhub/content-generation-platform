@@ -433,7 +433,7 @@ export function PersonaTrainingDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0">
+      <DialogContent className="max-w-[90vw] w-full h-[90vh] flex flex-col p-0">
         {/* Header */}
         <DialogHeader className="flex-shrink-0 p-6 pb-4 border-b">
           <div className="flex items-center justify-between">
@@ -597,23 +597,25 @@ export function PersonaTrainingDialog({
                                   {persona.contentType || "mixed"}
                                 </Badge>
                               </div>
-                              <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-                                <span>{persona.rawContent.length} chars</span>
-                                <span>{persona.rawContent.split(/---+|===+/).length} samples</span>
-                                <span className="flex items-center gap-1">
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1 flex-wrap">
+                                <span className="flex-shrink-0">{persona.rawContent.length} chars</span>
+                                <span className="flex-shrink-0">{persona.rawContent.split(/---+|===+/).length} samples</span>
+                                <span className="flex items-center gap-1 flex-shrink-0">
                                   <Calendar className="w-3 h-3" />
                                   {new Date(persona.createdAt).toLocaleDateString()}
                                 </span>
                                 {persona.instructions && (
-                                  <span className="flex items-center gap-1 text-blue-600">
+                                  <span className="flex items-center gap-1 text-blue-600 flex-shrink-0">
                                     <Lightbulb className="w-3 h-3" />
                                     Instructions
                                   </span>
                                 )}
                                 {persona.sentiment && (
-                                  <span className="flex items-center gap-1 text-purple-600">
-                                    <BarChart3 className="w-3 h-3" />
-                                    {persona.sentiment.dominant} tone • {persona.sentiment.styleCharacteristics?.formalityLevel || 'mixed'} style
+                                  <span className="flex items-center gap-1 text-purple-600 min-w-0">
+                                    <BarChart3 className="w-3 h-3 flex-shrink-0" />
+                                    <span className="truncate">
+                                      {persona.sentiment.dominant} tone • {persona.sentiment.styleCharacteristics?.formalityLevel || 'mixed'} style
+                                    </span>
                                   </span>
                                 )}
                               </div>
