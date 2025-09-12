@@ -11,7 +11,7 @@ const groqClient = createOpenAI({
 })
 
 const geminiClient = createGoogleGenerativeAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+  apiKey: process.env.GEMINI_API_KEY,
 })
 
 // Load persona training data with analysis
