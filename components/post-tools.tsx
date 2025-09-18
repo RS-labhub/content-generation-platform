@@ -128,6 +128,8 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
   const [selectedImageProvider, setSelectedImageProvider] = useState("pollinations_free")
   const [selectedImageModel, setSelectedImageModel] = useState("turbo")
   const [selectedImageSize, setSelectedImageSize] = useState("square_large")
+  const [customWidth, setCustomWidth] = useState("512")
+  const [customHeight, setCustomHeight] = useState("512")
   const [selectedImageStyle, setSelectedImageStyle] = useState("none")
   const [customStyle, setCustomStyle] = useState("")
   const [isGeneratingImage, setIsGeneratingImage] = useState(false)
@@ -240,6 +242,17 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
       return
     }
 
+    // Validate custom dimensions if custom size is selected
+    if (selectedImageSize === "custom" && (selectedImageProvider === "pollinations_free" || selectedImageProvider === "free_alternatives")) {
+      const width = parseInt(customWidth)
+      const height = parseInt(customHeight)
+      
+      if (isNaN(width) || isNaN(height) || width < 64 || height < 64 || width > 2048 || height > 2048) {
+        setImageError("Please enter valid dimensions (64-2048 pixels)")
+        return
+      }
+    }
+
     const provider = IMAGE_PROVIDERS[selectedImageProvider as keyof typeof IMAGE_PROVIDERS]
     if (!provider) {
       setImageError("Invalid provider selected")
@@ -284,6 +297,8 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
           content: post,
           title: postTitle,
           size: selectedImageSize,
+          customWidth: selectedImageSize === "custom" ? parseInt(customWidth) : undefined,
+          customHeight: selectedImageSize === "custom" ? parseInt(customHeight) : undefined,
           model: selectedImageModel,
           apiKey,
           style: selectedImageStyle,
@@ -568,6 +583,7 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
                           <>
                             <SelectItem value="landscape_wide">Wide (1024x576)</SelectItem>
                             <SelectItem value="hd_landscape">HD Landscape (1536x864)</SelectItem>
+                            <SelectItem value="custom">Custom Size</SelectItem>
                           </>
                         )}
                         {(selectedImageProvider === "openai") && (
@@ -580,6 +596,36 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Custom Dimensions - Show only when custom size is selected for free providers */}
+                  {selectedImageSize === "custom" && (selectedImageProvider === "pollinations_free" || selectedImageProvider === "free_alternatives") && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label className="text-sm">Width (px)</Label>
+                        <Input
+                          type="number"
+                          value={customWidth}
+                          onChange={(e) => setCustomWidth(e.target.value)}
+                          placeholder="512"
+                          min="64"
+                          max="2048"
+                          className="text-sm"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm">Height (px)</Label>
+                        <Input
+                          type="number"
+                          value={customHeight}
+                          onChange={(e) => setCustomHeight(e.target.value)}
+                          placeholder="512"
+                          min="64"
+                          max="2048"
+                          className="text-sm"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Model Selection */}
