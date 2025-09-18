@@ -270,7 +270,7 @@ ${formatting.structuralMarkers.includes('triple-dash') ? '✅ Use --- for sectio
     const platformGuidelines = {
       linkedin: {
         description: "Professional network format, use line breaks, include relevant hashtags, encourage engagement",
-        maxLength: "1300 characters",
+        maxLength: "800-1100 characters",
         tone: "professional and engaging",
       },
       x: {
