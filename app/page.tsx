@@ -172,6 +172,7 @@ interface ChatMessage {
     carouselSlides?: string[]
     mermaidDiagram?: string
     imageUrl?: string
+    imageConfig?: ImageConfig
   }
   status?: "success" | "error"
   error?: string
@@ -731,7 +732,11 @@ export default function ContentPostingPlatform() {
     }
   }
 
-  const runImageGeneration = async (prompt: string) => {
+  const runImageGeneration = async (prompt: string, config?: ImageConfig) => {
+    const configToUse = config || imageConfig
+    const contentToUse = useContent ? configToUse.content : ""
+    const finalPrompt = [contentToUse, configToUse.customPrompt || prompt].filter(Boolean).join("\n\n")
+    
     try {
       const response = await fetch("/api/image-generate", {
         method: "POST",
@@ -739,16 +744,16 @@ export default function ContentPostingPlatform() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          provider: imageConfig.provider,
-          prompt: imageConfig.customPrompt || prompt,
-          content: imageConfig.content,
-          title: imageConfig.title,
-          size: imageConfig.size,
-          customWidth: imageConfig.customWidth,
-          customHeight: imageConfig.customHeight,
-          model: imageConfig.model,
-          style: imageConfig.style,
-          customStyle: imageConfig.customStyle,
+          provider: configToUse.provider,
+          prompt: finalPrompt,
+          content: contentToUse,
+          title: configToUse.title,
+          size: configToUse.size,
+          customWidth: configToUse.customWidth,
+          customHeight: configToUse.customHeight,
+          model: configToUse.model,
+          style: configToUse.style,
+          customStyle: configToUse.customStyle,
         }),
       })
 
@@ -769,7 +774,10 @@ export default function ContentPostingPlatform() {
           title: "Image Generated!",
           description: `Created visual using ${data.provider}.`,
         })
-        return typeof data.imageUrl === "string" ? data.imageUrl : null
+        return {
+          imageUrl: typeof data.imageUrl === "string" ? data.imageUrl : null,
+          config: configToUse,
+        }
       }
 
       toast({
@@ -840,11 +848,61 @@ export default function ContentPostingPlatform() {
     }
   }
 
-  const updateImageConfig = (field: keyof ImageConfig, value: string) => {
+  const updateImageConfig = (field: keyof ImageConfig, value: string | boolean) => {
     setImageConfig((previous) => ({
       ...previous,
       [field]: value,
     }))
+  }
+
+  const regenerateImage = async (messageId: string) => {
+    const message = chatHistory.find(msg => msg.id === messageId)
+    if (!message || !message.payload?.imageConfig) {
+      toast({
+        title: "Error",
+        description: "Cannot regenerate: configuration not found",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsProcessing(true)
+    
+    try {
+      const result = await runImageGeneration("", message.payload.imageConfig)
+      
+      if (result && result.imageUrl) {
+        // Update the message with new image URL
+        setChatHistory((prevHistory) => 
+          prevHistory.map((msg) => 
+            msg.id === messageId
+              ? { 
+                  ...msg, 
+                  payload: { 
+                    ...msg.payload, 
+                    imageUrl: result.imageUrl,
+                    imageConfig: result.config
+                  },
+                  timestamp: Date.now()
+                }
+              : msg
+          )
+        )
+        
+        toast({
+          title: "Image Regenerated!",
+          description: "New image created with the same settings",
+        })
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to regenerate image",
+        variant: "destructive",
+      })
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const startEditingCarousel = (messageId: string, slides: string[]) => {
@@ -1047,10 +1105,13 @@ export default function ContentPostingPlatform() {
           error = "Diagram generation failed."
         }
       } else if (activeMode === "image") {
-        const imageUrl = await runImageGeneration(prompt)
-        if (imageUrl) {
+        const result = await runImageGeneration(prompt)
+        if (result && result.imageUrl) {
           assistantContent = "Generated image:"
-          payload = { imageUrl }
+          payload = { 
+            imageUrl: result.imageUrl,
+            imageConfig: result.config
+          }
         } else {
           status = "error"
           error = "Image generation failed."
@@ -1388,11 +1449,30 @@ export default function ContentPostingPlatform() {
       }
       case "image": {
         const imageUrl = message.payload?.imageUrl || message.content
+        const hasConfig = !!message.payload?.imageConfig
         return (
           <div className="space-y-3">
-            <div className="overflow-hidden rounded-3xl border border-border/70 bg-background/60 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.65)]">
+            <div className="relative overflow-hidden rounded-3xl border border-border/70 bg-background/60 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.65)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imageUrl} alt="Generated visual" className="h-auto w-full object-cover" />
+              {hasConfig && (
+                <div className="absolute top-3 right-3">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => regenerateImage(message.id)}
+                    disabled={isProcessing}
+                    className="rounded-full shadow-lg bg-background/90 hover:bg-background backdrop-blur-sm border border-border/60"
+                    title="Regenerate with same settings"
+                  >
+                    {isProcessing ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-4" />
+                    )}
+                  </Button>
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <Button
@@ -1656,6 +1736,39 @@ export default function ContentPostingPlatform() {
                   className="min-h-[120px] rounded-2xl border-border/60 bg-background/80 text-sm"
                 />
               </div>
+
+              <Button
+                onClick={async () => {
+                  if (!imageConfig.customPrompt && !imageConfig.content) {
+                    toast({
+                      title: "Missing Prompt",
+                      description: "Please provide additional prompt details or source content",
+                      variant: "destructive",
+                    })
+                    return
+                  }
+
+                  setModeConfigTarget(null) // Close dialog
+                  
+                  // Generate image with the configured settings
+                  const prompt = imageConfig.title || "Generate image"
+                  await handleSendMessageWithPrompt(prompt)
+                }}
+                disabled={isProcessing}
+                className="w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 size-4" />
+                    Generate Image
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         )
@@ -1914,6 +2027,7 @@ export default function ContentPostingPlatform() {
                           ) : null}
                           {/* Use Content Toggle - only show if content exists */}
                           {((activeMode === "diagram" && diagramContent.trim()) || 
+                            (activeMode === "image" && imageConfig.content.trim()) ||
                             ((activeMode === "post" || activeMode === "carousel") && content.trim())) && (
                             <Button
                               variant="ghost"

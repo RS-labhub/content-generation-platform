@@ -7,7 +7,7 @@ const socialLinks = [
   {
     label: "GitHub",
     icon: <Github className="size-4" aria-hidden="true" />,
-    href: "https://github.com/RS-labhub",
+    href: "https://github.com/RS-labhub/content-generation-platform",
   },
   {
     label: "LinkedIn",
