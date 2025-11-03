@@ -89,6 +89,94 @@ interface SentimentAnalysis {
 }
 
 const STORAGE_KEY = "rss-platform-persona-training"
+const BUILT_IN_PERSONAS_KEY = "rss-platform-built-in-personas-initialized"
+
+// Initialize built-in personas on first load
+export function initializeBuiltInPersonas(): void {
+  if (typeof window === "undefined") return
+  
+  // Check if built-in personas have already been initialized
+  const initialized = localStorage.getItem(BUILT_IN_PERSONAS_KEY)
+  if (initialized === "true") return
+  
+  // Load rohan-sharma persona data from sample-data
+  const rohanSharmaContent = `𝗘𝘅𝗰𝗹𝘂𝘀𝗶𝘃𝗲 𝗖𝘆𝗯𝗲𝗿𝘀𝗲𝗰𝘂𝗿𝗶𝘁𝘆 𝗪𝗲𝗯𝗶𝗻𝗮𝗿 𝗔𝗹𝗲𝗿𝘁! 
+
+Join us for a game-changing session on securing connected devices with industry leaders from Infineon Technologies and Thistle Technologies!
+
+📅 August 14, 2025
+🕗 8:30 PM - 9:30 PM IST
+🎯 Focus: Practical embedded security implementation
+
+𝗪𝗵𝗮𝘁 𝗺𝗮𝗸𝗲𝘀 𝘁𝗵𝗶𝘀 𝘄𝗲𝗯𝗶𝗻𝗮𝗿 𝗱𝗶𝗳𝗳𝗲𝗿𝗲𝗻𝘁?
+• No death by PowerPoint - real, interactive engineering discussions
+• Practical insights for CRA compliance
+• Hands-on approach to boot protection & OTA firmware updates
+• Direct access to industry experts
+
+𝗙𝗲𝗮𝘁𝘂𝗿𝗲𝗱 𝗦𝗽𝗲𝗮𝗸𝗲𝗿𝘀:
+→ Raúl Vergara (Thistle Technologies)
+→ Josh Marquardt (Infineon Technologies)
+→ Julie Huang (Infineon Technologies)
+→ Elliott Lee-Hearn (ipXchange)
+
+𝗞𝗲𝘆 𝗧𝗼𝗽𝗶𝗰𝘀:
+• PSOC™ 6 Family security features
+• OPTIGA™ Trust M implementation
+• Edge device security best practices
+• Real-world cybersecurity challenges & solutions
+
+Perfect for engineers, security professionals, and tech leaders looking to strengthen their IoT security infrastructure.
+
+𝗟𝗶𝗺𝗶𝘁𝗲𝗱 𝘀𝗽𝗼𝘁𝘀 𝗮𝘃𝗮𝗶𝗹𝗮𝗯𝗹𝗲! Register now:
+https://tr.ee/thistle-rs
+
+---
+
+𝗕𝗶𝗴 𝗺𝗶𝗹𝗲𝘀𝘁𝗼𝗻𝗲 𝗳𝗼𝗿 𝗟𝗟𝗠𝗪𝗮𝗿𝗲.
+
+We've 𝗰𝗿𝗼𝘀𝘀𝗲𝗱 𝟯𝟬𝟬+ 𝗳𝗼𝗹𝗹𝗼𝘄𝗲𝗿𝘀 𝗼𝗻 𝗚𝗶𝘁𝗛𝘂𝗯, with 𝟭𝟰𝗞+ 𝘀𝘁𝗮𝗿𝘀 𝗮𝗻𝗱 𝟮.𝟱𝗞+ 𝗳𝗼𝗿𝗸𝘀 and our Discord community has grown to 𝗼𝘃𝗲𝗿 𝟱,𝟬𝟬𝟬+ 𝗱𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿𝘀.
+
+LLMWare (by Ai Bloks) is built for developers who want fast, production-ready LLM apps without the heavy lifting. From lightweight model hosting to enterprise-ready integrations, we're making it easier to go from idea to deployment in record time.
+
+If you're building with LLMs and want to stay ahead of the curve:
+
+✦ 𝗘𝘅𝗽𝗹𝗼𝗿𝗲 𝘁𝗵𝗲 𝗚𝗶𝘁𝗵𝘂𝗯 𝗥𝗲𝗽𝗼𝘀𝗶𝘁𝗼𝗿𝘆: https://lnkd.in/duQudB-D
+
+✦ 𝗝𝗼𝗶𝗻 𝘁𝗵𝗲 𝗟𝗟𝗠𝗪𝗮𝗿𝗲 𝗖𝗼𝗺𝗺𝘂𝗻𝗶𝘁𝘆: https://lnkd.in/gY-_Cy8i
+
+Let's build the future of LLM applications together.`
+  
+  const rohanSharmaInstructions = "Write in an engaging, professional style with Unicode bold formatting for headers. Use bullet points with •, →, and ✦ symbols. Include relevant emojis naturally. Focus on technical topics, community engagement, and innovation. Structure posts with clear sections separated by --- when appropriate."
+  
+  try {
+    // Check if rohan-sharma persona already exists
+    const existingPersona = getPersonaTrainingData("rohan-sharma")
+    if (!existingPersona) {
+      // Create the built-in persona
+      const sentiment = analyzeSentiment(rohanSharmaContent)
+      const persona: PersonaData = {
+        name: "rohan-sharma",
+        rawContent: rohanSharmaContent,
+        instructions: rohanSharmaInstructions,
+        createdAt: new Date().toISOString(),
+        isBuiltIn: true,
+        contentType: "posts",
+        sentiment
+      }
+      
+      // Save the persona
+      const stored = getStoredPersonaData()
+      stored.push(persona)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stored))
+    }
+    
+    // Mark as initialized
+    localStorage.setItem(BUILT_IN_PERSONAS_KEY, "true")
+  } catch (error) {
+    console.error("Error initializing built-in personas:", error)
+  }
+}
 
 // Comprehensive sentiment analysis function
 export function analyzeSentiment(text: string): SentimentAnalysis {

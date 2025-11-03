@@ -54,6 +54,7 @@ export class APIKeyManager {
   private static instance: APIKeyManager
   private keys: Map<string, string> = new Map()
   private configs: APIKeyConfig[] = []
+  private listeners: Set<() => void> = new Set()
 
   private constructor() {
     this.loadFromStorage()
@@ -125,6 +126,7 @@ export class APIKeyManager {
     this.keys.set(id, key)
     this.configs.push(config)
     this.saveToStorage()
+    this.notifyListeners()
     
     return id
   }
@@ -137,6 +139,7 @@ export class APIKeyManager {
       if (config) {
         config.lastUsed = new Date().toISOString()
         this.saveToStorage()
+        this.notifyListeners()
       }
     }
     return key || null
@@ -146,6 +149,7 @@ export class APIKeyManager {
     this.keys.delete(id)
     this.configs = this.configs.filter(c => c.id !== id)
     this.saveToStorage()
+    this.notifyListeners()
   }
 
   updateAPIKeyModels(id: string, models: string[]): void {
@@ -153,6 +157,7 @@ export class APIKeyManager {
     if (config) {
       config.models = models
       this.saveToStorage()
+      this.notifyListeners()
     }
   }
 
@@ -178,6 +183,7 @@ export class APIKeyManager {
     this.keys.clear()
     this.configs = []
     this.saveToStorage()
+    this.notifyListeners()
   }
 
   validateKey(provider: string, key: string): boolean {
@@ -195,6 +201,23 @@ export class APIKeyManager {
       default:
         return key.length > 0
     }
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  private notifyListeners(): void {
+    this.listeners.forEach((listener) => {
+      try {
+        listener()
+      } catch (error) {
+        console.error("APIKeyManager listener error:", error)
+      }
+    })
   }
 }
 

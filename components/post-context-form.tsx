@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Brain, Settings, Plus, User, RefreshCw, Building2 } from "lucide-react"
 import { getAllPersonaData, getPersonaTrainingDataWithType } from "@/lib/persona-training"
 import { getAllContextData, getContextData } from "@/lib/context-manager"
@@ -44,6 +45,19 @@ export function PostContextForm({
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [contexts, setContexts] = useState<any[]>([])
   const [selectedContextData, setSelectedContextData] = useState<any>(null)
+
+  const normalizeWhitespace = (value: string) => value.trim().replace(/\s+/g, " ")
+
+  const formatTopic = (topic: string, limit = 48) => {
+    const normalized = normalizeWhitespace(topic)
+    return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized
+  }
+
+  const formatPreview = (value: string | undefined, limit = 160) => {
+    if (!value) return ""
+    const normalized = normalizeWhitespace(value)
+    return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized
+  }
 
   const loadPersonas = () => {
     try {
@@ -222,7 +236,7 @@ export function PostContextForm({
 
           {/* Show persona details if selected */}
           {selectedPersonaData && (
-            <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
+            <div className="p-3 bg-primary/10 dark:bg-primary/20 rounded-lg border border-primary/30 dark:border-primary/40">
               <div className="flex items-center gap-2 mb-2">
                 <Brain className="w-4 h-4 text-primary" />
                 <span className="font-medium text-sm capitalize">{selectedPersonaData.name}</span>
@@ -232,7 +246,7 @@ export function PostContextForm({
               </div>
               <div className="text-xs text-muted-foreground space-y-1">
                 <p>{selectedPersonaData.rawContent.length} characters of training data</p>
-                {selectedPersonaData.instructions && <p className="text-primary">✓ Has custom instructions</p>}
+                {selectedPersonaData.instructions && <p className="text-primary dark:text-primary/90">✓ Has custom instructions</p>}
               </div>
             </div>
           )}
@@ -283,8 +297,8 @@ export function PostContextForm({
                 {contexts.map((context) => (
                   <SelectItem key={context.name} value={context.name}>
                     <div className="flex items-center gap-2">
-                      <div className="p-1 bg-blue-100 rounded-sm">
-                        <Building2 className="w-3 h-3 text-blue-600" />
+                      <div className="p-1 bg-blue-100 dark:bg-blue-900/30 rounded-sm">
+                        <Building2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                       </div>
                       <span>{context.name}</span>
                       <Badge variant="outline" className="text-xs ml-auto capitalize">
@@ -298,9 +312,9 @@ export function PostContextForm({
 
             {/* Show context details if selected */}
             {selectedContextData && (
-              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="p-3 bg-blue-500/10 dark:bg-blue-500/20 rounded-lg border border-blue-500/30 dark:border-blue-500/40">
                 <div className="flex items-center gap-2 mb-2">
-                  <Building2 className="w-4 h-4 text-blue-600" />
+                  <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   <span className="font-medium text-sm">{selectedContextData.name}</span>
                   <Badge variant="outline" className="text-xs capitalize">
                     {selectedContextData.category}
@@ -309,13 +323,50 @@ export function PostContextForm({
                 <div className="text-xs text-muted-foreground space-y-1">
                   <p>{selectedContextData.data.rawContent.length} characters of context data</p>
                   {selectedContextData.description && (
-                    <p className="text-blue-600">"{selectedContextData.description}"</p>
+                    <p className="text-blue-700 dark:text-blue-300">"{formatPreview(selectedContextData.description, 140)}"</p>
                   )}
-                  {selectedContextData.analysis?.keyTopics && (
-                    <p className="text-blue-600">
-                      Key topics: {selectedContextData.analysis.keyTopics.slice(0, 3).join(", ")}
+                  {selectedContextData.analysis?.keyTopics?.length ? (
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-blue-600/80 dark:text-blue-400/80">
+                      {selectedContextData.analysis.keyTopics.length} topic
+                      {selectedContextData.analysis.keyTopics.length === 1 ? "" : "s"}
                     </p>
-                  )}
+                  ) : null}
+                  {selectedContextData.analysis?.keyInsights?.length ? (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-blue-700 dark:text-blue-300">
+                      <span className="rounded-full border border-blue-500/30 dark:border-blue-500/40 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-700/80 dark:text-blue-300/80">
+                        Insight
+                      </span>
+                      <span className="min-w-0 flex-1 leading-snug">{formatPreview(selectedContextData.analysis.keyInsights[0], 160)}</span>
+                      {selectedContextData.analysis.keyInsights.length > 1 ? (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 rounded-full px-2 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+                            >
+                              +{selectedContextData.analysis.keyInsights.length - 1} more
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="max-w-[calc(100vw-4rem)] w-72 space-y-2 text-sm" align="start">
+                            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                              Additional insights
+                            </p>
+                            <div className="grid max-h-48 gap-1.5 overflow-y-auto pr-1">
+                              {selectedContextData.analysis.keyInsights.slice(1).map((insight: string) => (
+                                <div
+                                  key={insight}
+                                  className="rounded-lg border border-border/60 bg-background/70 px-2 py-1 text-xs text-foreground"
+                                >
+                                  {formatPreview(insight, 180)}
+                                </div>
+                              ))}
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}

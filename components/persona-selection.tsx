@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Brain, Settings, Plus } from "lucide-react"
-import { getAllPersonaData } from "@/lib/persona-training"
+import { getAllPersonaData, initializeBuiltInPersonas } from "@/lib/persona-training"
 import { useEffect, useState } from "react"
 
 interface PersonaSelectionProps {
@@ -18,6 +18,8 @@ export function PersonaSelection({ selectedPersona, onPersonaChange, onShowPerso
   const [personas, setPersonas] = useState<any[]>([])
 
   useEffect(() => {
+    // Initialize built-in personas on first load
+    initializeBuiltInPersonas()
     loadPersonas()
   }, [])
 
@@ -59,6 +61,11 @@ export function PersonaSelection({ selectedPersona, onPersonaChange, onShowPerso
               <Badge variant="outline" className="text-xs">
                 {selectedPersonaData.contentType || "mixed"}
               </Badge>
+              {selectedPersonaData.isBuiltIn && (
+                <Badge variant="secondary" className="text-xs">
+                  Built-in
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
               {selectedPersonaData.rawContent.length} characters of training data
@@ -87,6 +94,11 @@ export function PersonaSelection({ selectedPersona, onPersonaChange, onShowPerso
                     <Badge variant="outline" className="text-xs ml-auto">
                       {persona.contentType || "mixed"}
                     </Badge>
+                    {persona.isBuiltIn && (
+                      <Badge variant="secondary" className="text-xs">
+                        Built-in
+                      </Badge>
+                    )}
                   </div>
                 </SelectItem>
               ))}

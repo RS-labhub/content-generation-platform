@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   Building2,
   Upload,
@@ -448,143 +449,207 @@ export function ContextManagerDialog({
               </div>
             </DialogHeader>
 
-            <div className="flex gap-4 mb-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search contexts..."
-                    className="pl-10"
-                  />
+            <div className="flex-1 min-h-0 flex flex-col gap-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search contexts..."
+                      className="pl-10"
+                    />
+                  </div>
                 </div>
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories ({contexts.length})</SelectItem>
+                    {CONTEXT_CATEGORIES.map((category) => {
+                      const count = contexts.filter((c) => c.category === category.name).length
+                      return (
+                        <SelectItem key={category.name} value={category.name}>
+                          <span className="capitalize">
+                            {category.name} ({count})
+                          </span>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
               </div>
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories ({contexts.length})</SelectItem>
-                  {CONTEXT_CATEGORIES.map((category) => {
-                    const count = contexts.filter((c) => c.category === category.name).length
-                    return (
-                      <SelectItem key={category.name} value={category.name}>
-                        <span className="capitalize">
-                          {category.name} ({count})
-                        </span>
-                      </SelectItem>
-                    )
-                  })}
-                </SelectContent>
-              </Select>
+
+              <section className="flex-1 min-h-0 overflow-hidden rounded-lg border border-border/60 bg-muted/40">
+                <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+                  <span className="text-sm font-medium text-foreground">Saved contexts</span>
+                  <span className="text-xs text-muted-foreground">{filteredContexts.length} available</span>
+                </div>
+                <ScrollArea className="h-[calc(90vh-320px)]">
+                  <div className="px-3 py-4">
+                    {filteredContexts.length === 0 ? (
+                      <div className="text-center py-12">
+                        <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-medium mb-2">No contexts found</h3>
+                        <p className="text-muted-foreground mb-4">
+                          {searchQuery || selectedCategory !== "all"
+                            ? "Try adjusting your search or filters"
+                            : "Create your first context to get started"}
+                        </p>
+                        {!searchQuery && selectedCategory === "all" && (
+                          <Button onClick={() => setIsCreating(true)}>
+                            <Plus className="w-4 h-4 mr-2" />
+                            Create Context
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredContexts.map((context) => {
+                          const Icon = getCategoryIcon(context.category)
+
+                          return (
+                            <Card
+                              key={context.name}
+                              className="cursor-pointer hover:bg-muted/50 transition-colors"
+                              onClick={() => setSelectedContext(context.name)}
+                            >
+                              <CardContent className="p-4">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-start gap-3 flex-1">
+                                    <Icon className="w-5 h-5 mt-0.5 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="font-medium">{context.name}</span>
+                                        <Badge variant="secondary" className="text-xs">
+                                          {context.category}
+                                        </Badge>
+                                      </div>
+                                      <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
+                                        <span>{context.data.rawContent.length} chars</span>
+                                        <span className="flex items-center gap-1">
+                                          <Clock className="w-3 h-3" />
+                                          {new Date(context.createdAt).toLocaleDateString()}
+                                        </span>
+                                      </div>
+                                      {(context.description || context.data.rawContent) && (
+                                        <p className="mb-2 max-w-full overflow-hidden text-ellipsis text-sm text-muted-foreground">
+                                          {formatPreview(context.description || context.data.rawContent, 150)}
+                                        </p>
+                                      )}
+                                      {context.analysis?.keyInsights?.length ? (
+                                        <div className="mb-2 flex flex-wrap items-start gap-2 text-xs text-muted-foreground">
+                                          <span className="rounded-full border border-border/60 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground/80">
+                                            Insight
+                                          </span>
+                                          <span className="min-w-0 flex-1 leading-relaxed">
+                                            {getInsightPreview(context)}
+                                          </span>
+                                          {hasAdditionalInsights(context) ? (
+                                            <Popover>
+                                              <PopoverTrigger asChild>
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="h-7 rounded-full px-2 text-[11px] text-muted-foreground hover:text-foreground"
+                                                  onClick={(event) => event.stopPropagation()}
+                                                >
+                                                  +{getAdditionalInsights(context).length} more
+                                                </Button>
+                                              </PopoverTrigger>
+                                              <PopoverContent
+                                                className="max-w-[calc(100vw-4rem)] w-72 space-y-2 text-sm"
+                                                align="start"
+                                                onClick={(event) => event.stopPropagation()}
+                                              >
+                                                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                                                  Additional insights
+                                                </p>
+                                                <div className="grid max-h-48 gap-1.5 overflow-y-auto pr-1">
+                                                  {getAdditionalInsights(context).map((insight) => (
+                                                    <div
+                                                      key={insight}
+                                                      className="rounded-lg border border-border/60 bg-muted/40 px-2 py-1 text-xs text-foreground"
+                                                    >
+                                                      {formatPreview(insight, 180)}
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </PopoverContent>
+                                            </Popover>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-1 ml-2">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleEditContext(context)
+                                      }}
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleDownload(context.name)
+                                      }}
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <Download className="w-3 h-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleDeleteContext(context.name)
+                                      }}
+                                      className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              </section>
             </div>
-
-            <ScrollArea className="flex-1">
-              {filteredContexts.length === 0 ? (
-                <div className="text-center py-12">
-                  <Building2 className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium mb-2">No contexts found</h3>
-                  <p className="text-muted-foreground mb-4">
-                    {searchQuery || selectedCategory !== "all"
-                      ? "Try adjusting your search or filters"
-                      : "Create your first context to get started"}
-                  </p>
-                  {!searchQuery && selectedCategory === "all" && (
-                    <Button onClick={() => setIsCreating(true)}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Context
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredContexts.map((context) => {
-                    const Icon = getCategoryIcon(context.category)
-
-                    return (
-                      <Card
-                        key={context.name}
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={() => setSelectedContext(context.name)}
-                      >
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start gap-3 flex-1">
-                              <Icon className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="font-medium">{context.name}</span>
-                                  <Badge variant="secondary" className="text-xs">
-                                    {context.category}
-                                  </Badge>
-                                </div>
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
-                                  <span>{context.data.rawContent.length} chars</span>
-                                  <span>{context.analysis?.keyTopics.length || 0} topics</span>
-                                  <span className="flex items-center gap-1">
-                                    <Clock className="w-3 h-3" />
-                                    {new Date(context.createdAt).toLocaleDateString()}
-                                  </span>
-                                </div>
-                                {context.description && (
-                                  <p className="text-sm text-muted-foreground mb-2">{context.description}</p>
-                                )}
-                                <div className="flex flex-wrap gap-1">
-                                  {context.analysis?.keyTopics.slice(0, 3).map((topic) => (
-                                    <Badge key={topic} variant="outline" className="text-xs">
-                                      {topic}
-                                    </Badge>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex gap-1 ml-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleEditContext(context)
-                                }}
-                                className="h-8 w-8 p-0"
-                              >
-                                <Edit3 className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleDownload(context.name)
-                                }}
-                                className="h-8 w-8 p-0"
-                              >
-                                <Download className="w-3 h-3" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleDeleteContext(context.name)
-                                }}
-                                className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
-                </div>
-              )}
-            </ScrollArea>
           </DialogContent>
         </Dialog>
       )}
     </>
   )
 }
+
+const normalizeWhitespace = (value: string) => value.trim().replace(/\s+/g, " ")
+
+const formatPreview = (value: string | undefined, limit = 160) => {
+  if (!value) return ""
+  const normalized = normalizeWhitespace(value)
+  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized
+}
+
+const hasAdditionalInsights = (context: ContextData) =>
+  (context.analysis?.keyInsights?.length || 0) > 1
+
+const getInsightPreview = (context: ContextData) =>
+  formatPreview(context.analysis?.keyInsights?.[0] ?? "", 160)
+
+const getAdditionalInsights = (context: ContextData) =>
+  (context.analysis?.keyInsights || []).slice(1)

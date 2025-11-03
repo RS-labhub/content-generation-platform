@@ -496,7 +496,7 @@ export function PersonaTrainingDialog({
             <div
               className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
                 isDragOver
-                  ? "border-primary bg-primary/5"
+                  ? "border-primary bg-primary/10 dark:bg-primary/20"
                   : "border-muted-foreground/25 hover:border-muted-foreground/50"
               } ${isLoading ? "opacity-50 pointer-events-none" : ""}`}
               onDragOver={handleDragOver}
@@ -512,10 +512,10 @@ export function PersonaTrainingDialog({
 
             {/* Quick Create Section */}
             {showQuickCreate && (
-              <div className="border rounded-lg p-4 bg-blue-50/50 border-blue-200">
+              <div className="border rounded-lg p-4 bg-blue-500/10 dark:bg-blue-500/20 border-blue-500/30 dark:border-blue-500/40">
                 <div className="flex items-center gap-2 mb-3">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <h4 className="font-medium text-blue-800">Quick Create from Text</h4>
+                  <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <h4 className="font-medium text-blue-800 dark:text-blue-200">Quick Create from Text</h4>
                 </div>
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -580,15 +580,15 @@ export function PersonaTrainingDialog({
                     <Card
                       key={persona.name}
                       className={`cursor-pointer transition-colors hover:bg-muted/50 ${
-                        selectedPersona === persona.name ? "ring-2 ring-blue-500 bg-blue-50" : ""
+                        selectedPersona === persona.name ? "ring-2 ring-blue-500 dark:ring-blue-400 bg-blue-500/10 dark:bg-blue-500/20" : ""
                       }`}
                       onClick={() => editPersona(persona)}
                     >
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="p-1.5 bg-blue-100 rounded">
-                              <User className="w-4 h-4 text-blue-600" />
+                            <div className="p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded">
+                              <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
@@ -605,13 +605,13 @@ export function PersonaTrainingDialog({
                                   {new Date(persona.createdAt).toLocaleDateString()}
                                 </span>
                                 {persona.instructions && (
-                                  <span className="flex items-center gap-1 text-blue-600 flex-shrink-0">
+                                  <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400 flex-shrink-0">
                                     <Lightbulb className="w-3 h-3" />
                                     Instructions
                                   </span>
                                 )}
                                 {persona.sentiment && (
-                                  <span className="flex items-center gap-1 text-purple-600 min-w-0">
+                                  <span className="flex items-center gap-1 text-purple-600 dark:text-purple-400 min-w-0">
                                     <BarChart3 className="w-3 h-3 flex-shrink-0" />
                                     <span className="truncate">
                                       {persona.sentiment.dominant} tone • {persona.sentiment.styleCharacteristics?.formalityLevel || 'mixed'} style
@@ -748,16 +748,16 @@ export function PersonaTrainingDialog({
                     <span>{trainingContent.split(/---+|===+/).length} samples detected</span>
                   </div>
                 </div>
-                <div className="text-xs text-muted-foreground bg-gray-50 p-2 rounded">
-                  <strong>💡 Tip:</strong> You can also upload .txt or .md files using the import buttons above, or use Quick Create for faster setup.
+                <div className="text-xs text-muted-foreground bg-gray-50 dark:bg-gray-900/30 p-2 rounded">
+                  <strong>Tip:</strong> You can also upload .txt or .md files using the import buttons above, or use Quick Create for faster setup.
                 </div>
                 
                 {/* Sentiment Analysis Display */}
                 {currentSentiment && (
-                  <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <div className="mt-3 p-3 bg-purple-500/10 dark:bg-purple-500/20 border border-purple-500/30 dark:border-purple-500/40 rounded-lg">
                     <div className="flex items-center gap-2 mb-2">
-                      <BarChart3 className="w-4 h-4 text-purple-600" />
-                      <span className="text-sm font-medium text-purple-800">Sentiment Analysis</span>
+                      <BarChart3 className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                      <span className="text-sm font-medium text-purple-800 dark:text-purple-200">Sentiment Analysis</span>
                     </div>
                     <div className="grid grid-cols-3 gap-3 mb-2">
                       <div className="flex items-center gap-2 text-sm">

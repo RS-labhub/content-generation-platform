@@ -17,6 +17,7 @@ export interface ContextData {
     entities: string[]
     dataCategories: string[]
     contentSummary: string
+    keyInsights: string[]
   }
   createdAt: string
   updatedAt: string
@@ -102,7 +103,48 @@ export function getContextData(contextName: string): ContextData | null {
   try {
     const contextKey = `${CONTEXT_PREFIX}${contextName}`
     const data = localStorage.getItem(contextKey)
-    return data ? JSON.parse(data) : null
+    if (!data) {
+      return null
+    }
+
+    const parsed: ContextData = JSON.parse(data)
+
+    if (!parsed.analysis || typeof parsed.analysis.keyInsights === "undefined") {
+      const refreshedAnalysis = analyzeContextContent(parsed.data?.rawContent || "")
+      const now = new Date().toISOString()
+
+      let updatedStructured = parsed.data?.structured
+      if (
+        parsed.data &&
+        typeof parsed.data.structured === "object" &&
+        parsed.data.structured !== null &&
+        Object.prototype.hasOwnProperty.call(parsed.data.structured, "analysis")
+      ) {
+        updatedStructured = {
+          ...(parsed.data.structured as Record<string, any>),
+          analysis: refreshedAnalysis,
+        }
+      }
+
+      const updatedContext: ContextData = {
+        ...parsed,
+        analysis: refreshedAnalysis,
+        data: {
+          ...parsed.data,
+          structured: updatedStructured,
+          metadata: {
+            ...parsed.data.metadata,
+            lastUpdated: now,
+          },
+        },
+        updatedAt: now,
+      }
+
+      localStorage.setItem(contextKey, JSON.stringify(updatedContext))
+      return updatedContext
+    }
+
+    return parsed
   } catch (error) {
     console.error("Error loading context data:", error)
     return null
@@ -145,121 +187,564 @@ export function removeContextData(contextName: string): void {
 }
 
 // Enhanced context content analysis with automatic extraction
-export function analyzeContextContent(rawContent: string): ContextData['analysis'] {
+export function analyzeContextContent(rawContent: string): ContextData["analysis"] {
   if (!rawContent.trim()) {
     return {
       keyTopics: [],
       entities: [],
       dataCategories: [],
-      contentSummary: 'Start typing to see content analysis...'
+      contentSummary: "Start typing to see content analysis...",
+      keyInsights: [],
     }
   }
 
-  const words = rawContent.toLowerCase().split(/\s+/)
-  const sentences = rawContent.split(/[.!?]+/).filter(s => s.trim().length > 10)
-  const lines = rawContent.split('\n').filter(line => line.trim())
-  
-  // Comprehensive stop words list
+  const normalizedContent = rawContent.replace(/\r\n/g, "\n")
+  const sentences = (normalizedContent.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [])
+    .map((sentence) => sentence.replace(/\s+/g, " ").trim())
+    .filter((sentence) => sentence.length > 0)
+  const lines = normalizedContent
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+
   const stopWords = new Set([
-    'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'up', 'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'among', 'throughout', 'despite', 'towards', 'upon',
-    'this', 'that', 'these', 'those', 'i', 'me', 'my', 'myself', 'we', 'us', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves',
-    'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'can', 'will', 'just', 'should', 'now',
-    'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'being', 'been', 'be', 'am', 'is', 'are', 'was', 'were'
+    "the",
+    "and",
+    "or",
+    "but",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "of",
+    "with",
+    "by",
+    "from",
+    "up",
+    "about",
+    "into",
+    "through",
+    "during",
+    "before",
+    "after",
+    "above",
+    "below",
+    "between",
+    "among",
+    "throughout",
+    "despite",
+    "towards",
+    "upon",
+    "this",
+    "that",
+    "these",
+    "those",
+    "i",
+    "me",
+    "my",
+    "myself",
+    "we",
+    "us",
+    "our",
+    "ours",
+    "ourselves",
+    "you",
+    "your",
+    "yours",
+    "yourself",
+    "yourselves",
+    "he",
+    "him",
+    "his",
+    "himself",
+    "she",
+    "her",
+    "hers",
+    "herself",
+    "it",
+    "its",
+    "itself",
+    "they",
+    "them",
+    "their",
+    "theirs",
+    "themselves",
+    "what",
+    "which",
+    "who",
+    "whom",
+    "whose",
+    "where",
+    "when",
+    "why",
+    "how",
+    "all",
+    "any",
+    "both",
+    "each",
+    "few",
+    "more",
+    "most",
+    "other",
+    "some",
+    "such",
+    "no",
+    "nor",
+    "not",
+    "only",
+    "own",
+    "same",
+    "so",
+    "than",
+    "too",
+    "very",
+    "can",
+    "will",
+    "just",
+    "should",
+    "now",
+    "have",
+    "has",
+    "had",
+    "having",
+    "do",
+    "does",
+    "did",
+    "doing",
+    "would",
+    "could",
+    "may",
+    "might",
+    "must",
+    "shall",
+    "being",
+    "been",
+    "be",
+    "am",
+    "is",
+    "are",
+    "was",
+    "were",
+    "https",
+    "http",
+    "www",
+    "com",
+    "inc",
+    "ltd",
+    "amp",
   ])
-  
-  // Smart keyword extraction with frequency analysis
+
+  const importantShortTokens = new Set(["ai", "ml", "ui", "ux", "it", "hr", "vr", "ar", "xr", "pr"])
+
+  const tokenize = (text: string) =>
+    text
+      .toLowerCase()
+      .split(/[^a-z0-9%]+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length > 0)
+
+  const allTokens = tokenize(normalizedContent)
   const wordFreq = new Map<string, number>()
-  words.forEach(word => {
-    const cleanWord = word.replace(/[^\w]/g, '').toLowerCase()
-    if (cleanWord.length > 3 && !stopWords.has(cleanWord) && !/^\d+$/.test(cleanWord)) {
-      wordFreq.set(cleanWord, (wordFreq.get(cleanWord) || 0) + 1)
+  allTokens.forEach((token) => {
+    if ((token.length <= 2 && !importantShortTokens.has(token)) || stopWords.has(token) || /^\d+$/.test(token)) {
+      return
+    }
+    wordFreq.set(token, (wordFreq.get(token) || 0) + 1)
+  })
+
+  const candidatePhrases: string[] = []
+  sentences.forEach((sentence) => {
+    const words = sentence
+      .toLowerCase()
+      .split(/[^a-z0-9&+/%-]+/)
+      .map((word) => word.trim())
+      .filter((word) => word.length > 0)
+
+    let currentPhrase: string[] = []
+    words.forEach((word) => {
+      const isMeaningful = (!stopWords.has(word) && (word.length > 2 || importantShortTokens.has(word)))
+      if (!isMeaningful) {
+        if (currentPhrase.length > 0) {
+          candidatePhrases.push(currentPhrase.join(" "))
+          currentPhrase = []
+        }
+      } else {
+        currentPhrase.push(word)
+      }
+    })
+
+    if (currentPhrase.length > 0) {
+      candidatePhrases.push(currentPhrase.join(" "))
     }
   })
-  
-  const keyTopics = Array.from(wordFreq.entries())
-    .filter(([_, freq]) => freq >= Math.max(2, Math.floor(words.length / 100)))
+
+  const rakeWordFreq = new Map<string, number>()
+  const rakeWordDegree = new Map<string, number>()
+  candidatePhrases.forEach((phrase) => {
+    const words = phrase.split(" ").filter((word) => word.length > 0)
+    const degree = words.length - 1
+    words.forEach((word) => {
+      rakeWordFreq.set(word, (rakeWordFreq.get(word) || 0) + 1)
+      rakeWordDegree.set(word, (rakeWordDegree.get(word) || 0) + degree)
+    })
+  })
+
+  const rakeWordScore = new Map<string, number>()
+  rakeWordFreq.forEach((freq, word) => {
+    const degree = (rakeWordDegree.get(word) || 0) + freq
+    rakeWordScore.set(word, degree / Math.max(freq, 1))
+  })
+
+  const phraseScores = new Map<string, number>()
+  candidatePhrases.forEach((phrase) => {
+    const words = phrase.split(" ").filter((word) => word.length > 0)
+    if (words.length === 0) {
+      return
+    }
+
+    const score = words.reduce((acc, word) => acc + (rakeWordScore.get(word) || 0), 0)
+    if (score > 0) {
+      phraseScores.set(phrase, (phraseScores.get(phrase) || 0) + score)
+    }
+  })
+
+  const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const findOriginalPhrase = (phrase: string) => {
+    const pattern = phrase
+      .trim()
+      .split(/\s+/)
+      .map((segment) => escapeRegex(segment))
+      .join("\\s+")
+    if (!pattern) {
+      return ""
+    }
+
+    const regex = new RegExp(`\\b${pattern}\\b`, "i")
+    const match = rawContent.match(regex)
+    if (match && match[0]) {
+      return match[0].replace(/\s+/g, " ").trim()
+    }
+
+    return phrase
+      .split(/\s+/)
+      .filter((segment) => segment.length > 0)
+      .map((segment) => {
+        if (segment.length <= 3) {
+          return segment.toUpperCase()
+        }
+        return segment.charAt(0).toUpperCase() + segment.slice(1)
+      })
+      .join(" ")
+  }
+
+  const sortedPhraseEntries = Array.from(phraseScores.entries())
+    .filter(([phrase]) => phrase.split(" ").length >= 2)
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([word]) => word)
-  
+
+  const sortedWordEntries = Array.from(wordFreq.entries())
+    .sort((a, b) => {
+      const scoreA = (rakeWordScore.get(a[0]) || 0) + a[1]
+      const scoreB = (rakeWordScore.get(b[0]) || 0) + b[1]
+      return scoreB - scoreA
+    })
+
+  const keyTopics: string[] = []
+  const seenTopics = new Set<string>()
+
+  const addTopic = (candidate: string) => {
+    const normalized = candidate.toLowerCase()
+    if (!normalized || seenTopics.has(normalized)) {
+      return
+    }
+    seenTopics.add(normalized)
+    keyTopics.push(candidate)
+  }
+
+  sortedPhraseEntries.some(([phrase]) => {
+    const topic = findOriginalPhrase(phrase)
+    if (!topic) {
+      return false
+    }
+    addTopic(topic)
+    return keyTopics.length >= 8
+  })
+
+  if (keyTopics.length < 10) {
+    for (const [word] of sortedWordEntries) {
+      const topic = findOriginalPhrase(word)
+      if (!topic) {
+        continue
+      }
+      addTopic(topic)
+      if (keyTopics.length >= 10) {
+        break
+      }
+    }
+  }
+
+  if (keyTopics.length === 0) {
+    for (const [word] of sortedWordEntries.slice(0, 5)) {
+      const topic = findOriginalPhrase(word) || word
+      addTopic(topic)
+    }
+  }
+
   // Enhanced entity extraction - multiple patterns
   const entityPatterns = [
-    // Company/Brand names (2-3 capitalized words)
-    /\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,2}\b/g,
-    // Products/Technologies with common suffixes
-    /\b[A-Z][a-zA-Z]*(?:Pro|Plus|Max|Tech|Soft|Ware|Lab|Hub|Cloud|AI|ML|API)\b/g,
-    // Acronyms and abbreviations
-    /\b[A-Z]{2,6}\b/g,
-    // Numbers with units or currency
-    /\$[\d,]+(?:\.\d{2})?|\d+(?:K|M|B|k|m|b)\b|\d+(?:%|GB|TB|MB)\b/g
+    /\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){1,3}\b/g, // Proper names and brands
+    /\b[A-Z][a-zA-Z]*(?:Pro|Plus|Max|Tech|Soft|Ware|Lab|Hub|Cloud|AI|ML|API|Suite|Platform)\b/g, // Product names
+    /\b[A-Z]{2,6}\b/g, // Acronyms
+    /\$[\d,]+(?:\.\d{2})?|\d+(?:K|M|B|k|m|b)\b|\d+(?:%|GB|TB|MB|hrs|yrs)\b/g, // Numbers and metrics
+    /#[a-zA-Z0-9_]+/g, // Hashtags
+    /https?:\/\/[^\s]+/g, // URLs
   ]
-  
+
   let entities: string[] = []
-  entityPatterns.forEach(pattern => {
+  entityPatterns.forEach((pattern) => {
     const matches = rawContent.match(pattern) || []
     entities.push(...matches)
   })
-  
-  // Filter and clean entities
+
   entities = Array.from(new Set(entities))
-    .filter(entity => {
-      const clean = entity.trim()
-      return clean.length > 1 && 
-             !stopWords.has(clean.toLowerCase()) &&
-             !/^(The|This|That|And|Or|But|If|When|Where|With|For|From)$/i.test(clean)
+    .map((entity) => entity.trim())
+    .filter((entity) => {
+      if (entity.length <= 1) {
+        return false
+      }
+      const lower = entity.toLowerCase()
+      return !stopWords.has(lower) && !/^(the|this|that|and|or|but|if|when|where|with|for|from)$/i.test(entity)
     })
-    .slice(0, 15)
-  
-  // Smart content categorization
+    .slice(0, 18)
+
   const categoryKeywords = {
-    'company': ['company', 'business', 'organization', 'firm', 'corporation', 'startup', 'agency', 'founded', 'headquarters', 'mission', 'vision', 'about us'],
-    'product': ['product', 'service', 'solution', 'offering', 'platform', 'software', 'application', 'tool', 'feature', 'functionality'],
-    'team': ['team', 'staff', 'employee', 'member', 'people', 'founder', 'ceo', 'cto', 'developer', 'designer', 'manager', 'director'],
-    'values': ['value', 'culture', 'principle', 'belief', 'mission', 'vision', 'philosophy', 'commitment', 'dedication'],
-    'process': ['process', 'workflow', 'methodology', 'approach', 'framework', 'strategy', 'procedure', 'method'],
-    'achievement': ['award', 'achievement', 'success', 'milestone', 'recognition', 'certified', 'winner', 'leader', 'growth'],
-    'contact': ['email', 'phone', 'address', 'contact', 'location', 'office', 'website', 'linkedin', 'twitter'],
-    'metrics': ['revenue', 'profit', 'growth', 'customer', 'client', 'user', 'download', 'million', 'billion', 'percent', '%']
+    company: [
+      "company",
+      "business",
+      "organization",
+      "firm",
+      "corporation",
+      "startup",
+      "agency",
+      "founded",
+      "headquarters",
+      "mission",
+      "vision",
+      "about us",
+      "team",
+      "culture",
+    ],
+    product: [
+      "product",
+      "service",
+      "solution",
+      "offering",
+      "platform",
+      "software",
+      "application",
+      "tool",
+      "feature",
+      "functionality",
+      "roadmap",
+      "release",
+      "integration",
+    ],
+    service: [
+      "service",
+      "package",
+      "consulting",
+      "support",
+      "deployment",
+      "maintenance",
+      "implementation",
+      "training",
+      "engagement",
+    ],
+    team: [
+      "team",
+      "staff",
+      "employee",
+      "member",
+      "people",
+      "founder",
+      "ceo",
+      "cto",
+      "developer",
+      "designer",
+      "manager",
+      "director",
+      "leadership",
+    ],
+    values: [
+      "value",
+      "culture",
+      "principle",
+      "belief",
+      "mission",
+      "vision",
+      "philosophy",
+      "commitment",
+      "dedication",
+      "promise",
+      "ethos",
+      "brand voice",
+    ],
+    process: [
+      "process",
+      "workflow",
+      "methodology",
+      "approach",
+      "framework",
+      "strategy",
+      "procedure",
+      "method",
+      "lifecycle",
+      "pipeline",
+    ],
+    achievement: [
+      "award",
+      "achievement",
+      "success",
+      "milestone",
+      "recognition",
+      "certified",
+      "winner",
+      "leader",
+      "growth",
+      "record",
+      "ranking",
+    ],
+    metrics: [
+      "revenue",
+      "profit",
+      "growth",
+      "customer",
+      "client",
+      "user",
+      "download",
+      "million",
+      "billion",
+      "percent",
+      "%",
+      "roi",
+      "conversion",
+    ],
+    marketing: [
+      "campaign",
+      "marketing",
+      "branding",
+      "positioning",
+      "audience",
+      "segment",
+      "channel",
+      "engagement",
+      "reach",
+    ],
   }
-  
+
   const dataCategories: string[] = []
-  const contentLower = rawContent.toLowerCase()
-  
+  const contentLower = normalizedContent.toLowerCase()
   Object.entries(categoryKeywords).forEach(([category, keywords]) => {
-    const matches = keywords.filter(keyword => contentLower.includes(keyword)).length
-    if (matches >= 2 || (keywords.length > 5 && matches >= 3)) {
+    const matches = keywords.filter((keyword) => contentLower.includes(keyword)).length
+    const matchRatio = matches / Math.max(keywords.length, 1)
+    if (matches >= 2 || matchRatio >= 0.25) {
       dataCategories.push(category)
     }
   })
-  
-  // Intelligent content summary generation
-  let contentSummary = ''
-  if (sentences.length > 0) {
-    // Find the most informative sentence
-    const importantSentences = sentences.filter(sentence => {
-      const s = sentence.toLowerCase()
-      return s.includes('company') || s.includes('business') || s.includes('we') || 
-             s.includes('product') || s.includes('service') || s.includes('specialize') ||
-             s.includes('offer') || s.includes('provide') || s.includes('focus')
+
+  const normalizedKeyTopics = keyTopics.map((topic) => topic.toLowerCase())
+  const sentenceCandidates = sentences
+    .map((sentence) => {
+      const lower = sentence.toLowerCase()
+      const words = lower.split(/[^a-z0-9%]+/).filter((token) => token.length > 0)
+      let score = 0
+      let topicMatches = 0
+
+      normalizedKeyTopics.forEach((topic) => {
+        if (topic.length > 3 && lower.includes(topic)) {
+          score += 4
+          topicMatches += 1
+        }
+      })
+
+      words.forEach((word) => {
+        score += rakeWordScore.get(word) || 0
+      })
+
+      if (/[0-9]/.test(sentence)) {
+        score += 2
+      }
+
+      if (sentence.length > 220) {
+        score *= 0.9
+      }
+
+      return {
+        sentence: sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?') ? sentence : `${sentence}.`,
+        score,
+        topicMatches,
+      }
     })
-    
-    const bestSentence = importantSentences[0] || sentences[0]
-    contentSummary = bestSentence.trim()
-    
-    if (contentSummary.length > 150) {
-      contentSummary = contentSummary.substring(0, 147) + '...'
+    .filter((candidate) => candidate.sentence.length > 30)
+
+  const averageSentenceScore =
+    sentenceCandidates.reduce((acc, candidate) => acc + candidate.score, 0) /
+      Math.max(sentenceCandidates.length, 1) || 0
+
+  const keyInsights: string[] = []
+  const usedSentences = new Set<string>()
+  sentenceCandidates
+    .sort((a, b) => b.score - a.score)
+    .forEach((candidate) => {
+      if (keyInsights.length >= 5) {
+        return
+      }
+
+      if (candidate.score < averageSentenceScore * 0.55 && keyInsights.length > 0) {
+        return
+      }
+
+      if (candidate.topicMatches === 0 && keyInsights.length >= 3) {
+        return
+      }
+
+      const normalizedSentence = candidate.sentence.toLowerCase()
+      if (usedSentences.has(normalizedSentence)) {
+        return
+      }
+
+      usedSentences.add(normalizedSentence)
+      keyInsights.push(candidate.sentence)
+    })
+
+  if (keyInsights.length === 0) {
+    if (sentences.length > 0) {
+      keyInsights.push(sentences[0].endsWith('.') ? sentences[0] : `${sentences[0]}.`)
+    } else if (lines.length > 0) {
+      keyInsights.push(`${lines[0]}.`)
     }
-  } else if (lines.length > 0) {
-    contentSummary = lines[0].substring(0, 100) + '...'
-  } else {
-    contentSummary = 'Content analysis will appear here as you type...'
   }
-  
+
+  let contentSummary = keyInsights.slice(0, 2).join(" ")
+  if (!contentSummary && sentences.length > 0) {
+    contentSummary = sentences[0]
+  }
+  if (!contentSummary && lines.length > 0) {
+    contentSummary = lines[0]
+  }
+  if (!contentSummary) {
+    contentSummary = "Content analysis will appear here as you type..."
+  }
+  if (contentSummary.length > 220) {
+    contentSummary = `${contentSummary.substring(0, 217).trim()}...`
+  }
+
   return {
     keyTopics,
     entities,
     dataCategories,
-    contentSummary
+    contentSummary,
+    keyInsights,
   }
 }
 

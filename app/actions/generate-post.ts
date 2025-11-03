@@ -97,6 +97,7 @@ export interface GeneratePostParams {
       entities: string[]
       dataCategories: string[]
       contentSummary: string
+      keyInsights?: string[]
     }
   } // Brand/company context data
 }
@@ -156,6 +157,7 @@ export interface GenerateLinkedInCarouselParams {
       entities: string[]
       dataCategories: string[]
       contentSummary: string
+      keyInsights?: string[]
     }
   }
 }
@@ -178,7 +180,7 @@ export async function generatePost({
 
     switch (provider) {
       case "groq":
-        aiModel = groqClient.chat("llama-3.3-70b-versatile")
+        aiModel = groqClient.chat("llama-3.1-8b-instant")
         break
       case "gemini":
         aiModel = geminiClient("models/gemini-2.0-flash")
@@ -355,60 +357,135 @@ ${contentType ? `4. Structure the content as a ${contentType.replace('-', ' ')} 
     if (personaTrainingData) {
       prompt += `
 
-PERSONA STYLE ANALYSIS & APPLICATION:
-${personaInstructions ? `Custom Instructions: ${personaInstructions}` : ""}${sentimentContext}${styleGuidance}${patternGuidance}
+╔══════════════════════════════════════════════════════════════╗
+║  PERSONA-DRIVEN CONTENT GENERATION (60% Style / 40% Creative) ║
+╚══════════════════════════════════════════════════════════════╝
 
-CRITICAL: The following examples are for STYLE LEARNING ONLY. Do NOT copy, quote, or reuse any content from these examples. Instead, analyze and adopt their writing characteristics:
+⚙️ GENERATION PARAMETERS:
+• Temperature: 0.4 (Balanced creativity with strict style adherence)
+• Style Weight: 60% - Match persona writing patterns exactly
+• Creative Weight: 40% - Allow natural pattern variations and topic adaptation
 
-WRITING STYLE EXAMPLES:
+${personaInstructions ? `📋 PERSONA INSTRUCTIONS: ${personaInstructions}` : ""}${sentimentContext}${styleGuidance}${patternGuidance}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WRITING STYLE REFERENCE EXAMPLES (FOR PATTERN LEARNING ONLY):
+
+⚠️ CRITICAL: These examples demonstrate STYLE ONLY. Never copy content, topics, or specific phrases from these examples.
+
 ${personaTrainingData}
 
-STYLE ANALYSIS TASKS:
-1. Analyze the sentence structure patterns (short vs long sentences, punctuation style)
-2. Identify vocabulary choices (formal/casual, technical/simple, unique expressions)
-3. Note the tone and personality (enthusiastic, professional, conversational, humorous)
-4. Observe formatting patterns (use of emojis, line breaks, capitalization)
-5. Study how ideas are presented and organized
-6. Notice the level of detail and explanation style
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-CONTENT CREATION REQUIREMENTS:
-Write about: "${content}"
+🎯 YOUR CONTENT TOPIC: "${content}"
 
-STEP-BY-STEP APPROACH:
-1. Read the source content: "${content}"
-2. Study the writing patterns provided above
-3. Write COMPLETELY NEW content about the source material
-4. Apply the exact writing patterns while discussing the new topic
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-MANDATORY STYLE MATCHING:
-- Use the EXACT sentence length patterns shown
-- Copy the formality level and vocabulary complexity
-- Replicate the punctuation style precisely
-- Use similar contractions and phrase structures
-- Match the pronoun usage patterns
-- Apply the same transition word style
-- Mirror the question and exclamation patterns
-- Maintain the same emotional tone
+📊 STYLE ANALYSIS & REPLICATION CHECKLIST (60% PRIORITY):
 
-FORBIDDEN ACTIONS:
-❌ Copying ANY content from the training examples
-❌ Mentioning topics from the training examples
-❌ Using phrases like "as I mentioned" or "like I said"
-❌ Writing in a generic AI style
-❌ Ignoring the specific patterns provided
+1. 🔤 SENTENCE STRUCTURE (CRITICAL - 15%):
+   - Analyze and match the exact sentence length distribution
+   - Replicate short vs long sentence rhythm
+   - Copy the flow and cadence of ideas
 
-REQUIRED ACTIONS:
-✅ Write about "${content}" ONLY
-✅ Sound exactly like the person who wrote the training examples
-✅ Use their exact writing rhythm and style
-✅ Apply their vocabulary choices and sentence structures
-✅ Match their personality perfectly
-✅ Create content that feels authentically human and personal
+2. 📝 FORMATTING PATTERNS (CRITICAL - 15%):
+   - Mirror heading styles, bullet points, and line breaks
+   - Use identical emphasis techniques (bold Unicode, emojis, symbols)
+   - Match list structures and visual organization
+   - Apply the same indentation and spacing patterns
 
-QUALITY CHECK:
-The final post should read as if the same person who wrote the training examples sat down and wrote about "${content}" in their natural style. It should NOT sound like AI trying to copy a style - it should BE that style applied to new content.
+3. 🗣️ TONE & VOICE (CRITICAL - 15%):
+   - Capture the emotional energy and enthusiasm level
+   - Match formality/informality balance
+   - Replicate personality quirks and characteristic expressions
+   - Maintain the same conversational style
 
-Generate the ${platform} post now:`
+4. 🎨 VOCABULARY & LANGUAGE (CRITICAL - 15%):
+   - Use similar vocabulary complexity level
+   - Apply the same technical vs casual language balance
+   - Include characteristic words and phrases
+   - Match pronoun usage patterns (I, we, you)
+   - Use similar transition words and connectors
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎨 CREATIVE ADAPTATION ALLOWANCE (40% PRIORITY):
+
+1. 💡 CONTENT ADAPTATION (20%):
+   - Adapt style to the new topic naturally
+   - Find relevant examples and context
+   - Connect ideas in ways that fit the new content
+   - Adjust emphasis based on topic importance
+
+2. 🔄 PATTERN MATCHING (20%):
+   - Recognize content patterns and structure
+   - Apply topic-appropriate organization
+   - Use domain-specific terminology where needed
+   - Balance style consistency with content clarity
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ EXECUTION PROTOCOL:
+
+STEP 1 - STYLE DEEP DIVE (60% Focus):
+→ Study the reference examples intensely
+→ Identify the "signature" writing markers
+→ Note the unique characteristics that make this style recognizable
+→ Internalize the rhythm, flow, and personality
+
+STEP 2 - CONTENT PLANNING (40% Focus):
+→ Understand the new topic: "${content}"
+→ Plan how to present this topic
+→ Identify key points to emphasize
+→ Consider platform requirements: ${platform}
+
+STEP 3 - WRITE WITH STYLE PRIORITY:
+→ Start writing in the exact persona voice
+→ Apply all formatting patterns observed
+→ Maintain the sentence structure rhythm
+→ Use the same tone and energy level
+→ Let the persona's style guide every word choice
+
+STEP 4 - QUALITY VERIFICATION:
+→ Does it SOUND like the persona wrote it?
+→ Are formatting patterns identical?
+→ Is the tone and energy level matched?
+→ Would someone recognize this as the persona's writing?
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚫 ABSOLUTE PROHIBITIONS:
+
+❌ Copying ANY phrases, sentences, or content from reference examples
+❌ Mentioning topics from the reference examples
+❌ Generic AI writing style (formal, robotic, overly structured)
+❌ Ignoring formatting patterns (bold Unicode, bullets, emojis)
+❌ Deviating from the established tone and personality
+❌ Using disclaimers or meta-commentary
+❌ Writing in a different voice or style
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ MANDATORY REQUIREMENTS:
+
+✓ Write ONLY about: "${content}"
+✓ Sound indistinguishable from the reference persona
+✓ Match ALL formatting patterns (Unicode bold, bullets, emojis, spacing)
+✓ Use the EXACT sentence structure and rhythm
+✓ Maintain the same energy and enthusiasm level
+✓ Apply identical vocabulary and language patterns
+✓ Create content that feels 100% authentic to the persona
+✓ Make it platform-appropriate for: ${platform}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 FINAL GOAL: 
+Create a ${platform} post about "${content}" that is indistinguishable from the persona's authentic writing. A reader familiar with this persona should NOT be able to tell this was AI-generated. It should capture their essence completely.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 BEGIN GENERATION NOW - Channel the persona completely and write the ${platform} post:`
     }
 
     // Add context data to the prompt if available
@@ -426,6 +503,9 @@ ${contextData.analysis?.contentSummary ? `
 Key Summary: ${contextData.analysis.contentSummary}` : ""}
 ${contextData.analysis?.keyTopics ? `
 Key Topics: ${contextData.analysis.keyTopics.join(", ")}` : ""}
+${contextData.analysis?.keyInsights?.length ? `
+Key Insights:
+- ${contextData.analysis.keyInsights.slice(0, 4).join("\n- ")}` : ""}
 ${contextData.analysis?.entities ? `
 Key Entities: ${contextData.analysis.entities.join(", ")}` : ""}
 
@@ -447,9 +527,12 @@ Make sure the post feels like it comes from someone who knows this company/brand
 
 Generate only the final post content, ready to publish:`
 
+    // Use temperature 0.4 for balanced creativity and persona matching
+    // 0.4 allows for pattern recognition while maintaining persona style
     const { text } = await generateText({
       model: aiModel,
       prompt,
+      temperature: 0.4, // Low temperature for 60% persona style adherence, with 40% creativity for pattern matching
     })
 
     return {
@@ -482,10 +565,10 @@ export async function generateContentDiagram({
 
     switch (provider) {
       case "groq":
-        aiModel = groqClient.chat("llama3-70b-8192")
+        aiModel = groqClient.chat("llama-3.1-8b-instant")
         break
       case "gemini":
-        aiModel = geminiClient("models/gemini-1.5-pro-latest")
+        aiModel = geminiClient("models/gemini-2.0-flash")
         break
       case "openai":
         if (!apiKey) throw new Error("OpenAI API key is required")
@@ -502,7 +585,14 @@ export async function generateContentDiagram({
     }
 
     // Rest of the function remains the same with the updated model...
-    const prompt = `
+    let prompt = ""
+    
+    // Generate appropriate prompt based on diagram type
+    switch (diagramType) {
+      case "flowchart":
+      case "process":
+      case "workflow":
+        prompt = `
 You are an expert at creating Mermaid diagrams. Create a ${diagramType} diagram based on the content provided.
 
 Content: "${content}"
@@ -537,15 +627,159 @@ STRUCTURE GUIDELINES:
 
 Generate ONLY the Mermaid diagram code following the exact format above:
 `
+        break
+
+      case "mindmap":
+        prompt = `
+You are an expert at creating Mermaid diagrams. Create a mindmap diagram based on the content provided.
+
+Content: "${content}"
+
+CRITICAL FORMATTING RULES FOR MINDMAP:
+
+1. ALWAYS start with: mindmap
+2. Start with root concept, then indent with 2 spaces for each level
+3. Use simple text, no special characters or quotes for node names
+4. Use indentation to show hierarchy
+
+CORRECT FORMAT EXAMPLE:
+mindmap
+  root((Central Idea))
+    Topic 1
+      Subtopic 1.1
+      Subtopic 1.2
+    Topic 2
+      Subtopic 2.1
+      Subtopic 2.2
+    Topic 3
+      Subtopic 3.1
+
+STRUCTURE GUIDELINES:
+1. Start with central concept in double parentheses: root((Central Idea))
+2. Create 3-5 main branches with 2 space indentation
+3. Add 2-3 sub-items per branch with 4 space indentation
+4. Keep labels concise and clear
+5. Use meaningful, related concepts
+
+Generate ONLY the Mermaid mindmap code following the exact format above:
+`
+        break
+
+      case "timeline":
+        prompt = `
+You are an expert at creating Mermaid diagrams. Create a timeline diagram based on the content provided.
+
+Content: "${content}"
+
+CRITICAL FORMATTING RULES FOR TIMELINE:
+
+1. ALWAYS start with: timeline
+2. Add a title on the next line
+3. List events chronologically with simple format: Year/Date : Event description
+
+CORRECT FORMAT EXAMPLE:
+timeline
+    title Project Timeline
+    2023-01 : Project Kickoff
+    2023-03 : Requirements Complete
+    2023-06 : Development Phase
+    2023-09 : Testing Phase
+    2023-12 : Launch
+
+STRUCTURE GUIDELINES:
+1. Add a meaningful title line
+2. Use chronological order
+3. Use year, year-month, or specific dates
+4. Keep event descriptions concise
+5. Include 5-10 key milestones
+
+Generate ONLY the Mermaid timeline code following the exact format above:
+`
+        break
+
+      case "hierarchy":
+        prompt = `
+You are an expert at creating Mermaid diagrams. Create a hierarchy/organization diagram based on the content provided.
+
+Content: "${content}"
+
+CRITICAL FORMATTING RULES FOR HIERARCHY:
+
+1. ALWAYS start with: graph TD
+2. Use alphanumeric identifiers (A, B, C, etc.)
+3. Use square brackets for labels: A["Label"]
+4. Use --> for connections showing hierarchy
+5. Arrange from top to bottom
+
+CORRECT FORMAT EXAMPLE:
+graph TD
+    A["CEO"] --> B["VP Engineering"]
+    A --> C["VP Sales"]
+    A --> D["VP Operations"]
+    B --> B1["Engineering Manager"]
+    B --> B2["QA Manager"]
+    C --> C1["Sales Manager"]
+
+STRUCTURE GUIDELINES:
+1. Start with the top-level entity
+2. Create logical hierarchical branches
+3. Use consistent indentation and structure
+4. Keep labels clear and concise
+5. Show reporting structure clearly
+
+Generate ONLY the Mermaid hierarchy diagram code following the exact format above:
+`
+        break
+
+      default:
+        // Default to flowchart for unknown types
+        prompt = `
+You are an expert at creating Mermaid diagrams. Create a flowchart diagram based on the content provided.
+
+Content: "${content}"
+
+CRITICAL FORMATTING RULES - FOLLOW EXACTLY:
+
+1. ALWAYS start with: flowchart TD
+2. Use ONLY alphanumeric identifiers (A, B, C, D1, D2, etc.) - NEVER use quotes around identifiers
+3. Use square brackets with quotes for labels: A["Label Text"]
+4. Connect using identifiers only: A --> B (NOT "A" --> "B")
+
+Generate ONLY the Mermaid diagram code following the exact format above:
+`
+    }
 
     const { text } = await generateText({ model: aiModel, prompt })
 
-    // Clean up the response (same as before)
+    // Clean up the response
     let cleaned = text.trim()
     cleaned = cleaned.replace(/```mermaid\n?/gi, "").replace(/```/g, "")
 
     const lines = cleaned.split("\n")
-    const diagramStartIndex = lines.findIndex((line) => /^flowchart\s+(TD|TB|BT|RL|LR)/i.test(line.trim()))
+    
+    // Determine the pattern to look for based on diagram type
+    let diagramStartPattern: RegExp
+    let defaultStart: string
+    
+    switch (diagramType) {
+      case "mindmap":
+        diagramStartPattern = /^mindmap/i
+        defaultStart = "mindmap"
+        break
+      case "timeline":
+        diagramStartPattern = /^timeline/i
+        defaultStart = "timeline"
+        break
+      case "hierarchy":
+        diagramStartPattern = /^graph\s+(TD|TB|BT|RL|LR)/i
+        defaultStart = "graph TD"
+        break
+      default:
+        diagramStartPattern = /^flowchart\s+(TD|TB|BT|RL|LR)/i
+        defaultStart = "flowchart TD"
+    }
+    
+    const diagramStartIndex = lines.findIndex((line) => diagramStartPattern.test(line.trim()))
 
     if (diagramStartIndex !== -1) {
       const diagramLines = []
@@ -560,8 +794,9 @@ Generate ONLY the Mermaid diagram code following the exact format above:
 
     cleaned = cleaned.replace(/^(Let me know|Hope this helps|I'm here.*)/gim, "").trim()
 
-    if (!/^flowchart\s+(TD|TB|BT|RL|LR)/i.test(cleaned)) {
-      cleaned = `flowchart TD\n${cleaned}`
+    // Add default start if not present
+    if (!diagramStartPattern.test(cleaned)) {
+      cleaned = `${defaultStart}\n${cleaned}`
     }
 
     return {

@@ -70,6 +70,7 @@ export interface GenerateLinkedInCarouselParams {
       entities: string[]
       dataCategories: string[]
       contentSummary: string
+      keyInsights?: string[]
     }
   }
 }
@@ -222,6 +223,9 @@ ${contextData.analysis?.contentSummary ? `
 Key Summary: ${contextData.analysis.contentSummary}` : ""}
 ${contextData.analysis?.keyTopics ? `
 Key Topics: ${contextData.analysis.keyTopics.join(", ")}` : ""}
+${contextData.analysis?.keyInsights?.length ? `
+Key Insights:
+- ${contextData.analysis.keyInsights.slice(0, 4).join("\n- ")}` : ""}
 ${contextData.analysis?.entities ? `
 Key Entities: ${contextData.analysis.entities.join(", ")}` : ""}
 
@@ -251,7 +255,7 @@ Generate the LinkedIn carousel slides now as a plain JSON array with no addition
     const { text } = await generateText({
       model: aiModel,
       prompt,
-      temperature: 0.7,
+      temperature: 0.4, // Low temperature for 60% persona style adherence, with 40% creativity for pattern matching
     })
     
     // Clean up function for individual slides

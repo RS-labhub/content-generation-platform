@@ -1,6 +1,9 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Settings, Zap, Key } from 'lucide-react'
+import { Settings, Zap, Key } from "lucide-react"
 import { apiKeyManager, type APIProvider } from "@/lib/api-key-manager"
 
 interface AIProviderSelectionProps {
@@ -20,6 +23,28 @@ export function AIProviderSelection({
   onShowAPIKeyDialog,
   onProviderChange
 }: AIProviderSelectionProps) {
+  const [keyAvailability, setKeyAvailability] = useState<Record<string, boolean>>({})
+  const [statusReady, setStatusReady] = useState(false)
+
+  useEffect(() => {
+    const updateAvailability = () => {
+      const availability = allProviders.reduce<Record<string, boolean>>((acc, providerInfo) => {
+        acc[providerInfo.id] = providerInfo.requiresKey
+          ? apiKeyManager.getConfigs(providerInfo.id).length > 0
+          : true
+        return acc
+      }, {})
+      setKeyAvailability(availability)
+      setStatusReady(true)
+    }
+
+    updateAvailability()
+    const unsubscribe = apiKeyManager.subscribe(updateAvailability)
+    return () => {
+      unsubscribe()
+    }
+  }, [allProviders])
+
   return (
     <Card>
       <CardHeader>
@@ -55,8 +80,7 @@ export function AIProviderSelection({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {allProviders.map((providerInfo) => {
             const isActive = provider === providerInfo.id
-            const hasKey = providerInfo.requiresKey ? 
-              apiKeyManager.getConfigs(providerInfo.id).length > 0 : true
+            const hasKey = keyAvailability[providerInfo.id] ?? false
             
             return (
               <Button
@@ -64,12 +88,13 @@ export function AIProviderSelection({
                 variant={isActive ? "default" : "outline"}
                 className="h-auto p-3 flex flex-col items-start gap-2 text-left justify-start relative"
                 onClick={() => {
-                  if (providerInfo.requiresKey && !hasKey) {
+                  if (providerInfo.requiresKey && statusReady && !hasKey) {
                     onShowAPIKeyDialog()
                   } else if (providerInfo.requiresKey) {
-                    // Show available keys for this provider
+                    // Use the most recently used key for this provider
                     const keys = apiKeyManager.getConfigs(providerInfo.id)
-                    if (keys.length === 1) {
+                    if (keys.length > 0) {
+                      // keys are already sorted by lastUsed (most recent first)
                       onProviderChange(providerInfo.id, keys[0].id)
                     } else {
                       onShowAPIKeyDialog()
@@ -92,8 +117,16 @@ export function AIProviderSelection({
                   </div>
                   {providerInfo.requiresKey && (
                     <div className="flex items-center gap-1">
-                      <Key className="w-3 h-3" />
-                      <span className="text-xs">API Key</span>
+                      {statusReady ? (
+                        <>
+                          <Key className={`w-3 h-3 ${hasKey ? "text-green-500" : "text-orange-500"}`} />
+                          <span className={`text-xs ${hasKey ? "text-green-600" : "text-orange-600"}`}>
+                            {hasKey ? "Configured" : "Setup Required"}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">Checking...</span>
+                      )}
                     </div>
                   )}
                 </div>
