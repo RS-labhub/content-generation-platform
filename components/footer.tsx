@@ -35,7 +35,7 @@ export function Footer() {
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
             <HeartCrack className="size-4 text-primary" aria-hidden="true" />
-            Crafted by Rohan Sharma in memories of Radhika Sharma
+            Crafted by Rohan Sharma driven by Radhika Sharma
           </div>
           <p className="text-sm text-muted-foreground">
             Explore more tools and community projects that help marketers, founders, and creators scale meaningful
