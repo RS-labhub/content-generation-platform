@@ -1011,17 +1011,43 @@ export default function ContentPostingPlatform() {
         }
         buffer += normalFromItalic
       } else {
-        // Close any open sequences
-        if (inBoldSequence) {
-          convertedText += buffer + '**'
-          buffer = ''
-          inBoldSequence = false
-        } else if (inItalicSequence) {
-          convertedText += buffer + '*'
-          buffer = ''
-          inItalicSequence = false
+        // For spaces and punctuation, keep them within the formatting if we're in a sequence
+        // Look ahead to see if the formatting continues
+        let shouldCloseFormat = true
+        if (inBoldSequence || inItalicSequence) {
+          // Look ahead to check if there are more formatted characters coming
+          for (let j = i + 1; j < chars.length; j++) {
+            const nextChar = chars[j]
+            // Skip whitespace and punctuation to look for more formatted text
+            if (nextChar === ' ' || nextChar === ',' || nextChar === '.' || nextChar === '!' || 
+                nextChar === '?' || nextChar === ':' || nextChar === ';' || nextChar === '-' ||
+                nextChar === '(' || nextChar === ')' || nextChar === "'" || nextChar === '"') {
+              continue
+            }
+            // Check if next meaningful character is formatted
+            if ((inBoldSequence && boldMap[nextChar]) || (inItalicSequence && italicMap[nextChar])) {
+              shouldCloseFormat = false
+            }
+            break
+          }
         }
-        convertedText += char
+
+        if (shouldCloseFormat) {
+          // Close any open sequences
+          if (inBoldSequence) {
+            convertedText += buffer + '**'
+            buffer = ''
+            inBoldSequence = false
+          } else if (inItalicSequence) {
+            convertedText += buffer + '*'
+            buffer = ''
+            inItalicSequence = false
+          }
+          convertedText += char
+        } else {
+          // Keep the format open and add the character to buffer
+          buffer += char
+        }
       }
     }
 
