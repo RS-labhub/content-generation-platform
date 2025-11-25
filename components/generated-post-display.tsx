@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -85,8 +87,30 @@ export function GeneratedPostDisplay({
                   placeholder="Edit your generated post..."
                 />
               ) : (
-                <div className="text-sm font-medium leading-relaxed whitespace-pre-wrap break-words text-gray-800 min-h-[200px] sm:min-h-[300px] max-h-[400px] overflow-y-auto">
-                  {currentPost}
+                <div className="text-sm leading-relaxed break-words text-gray-800 min-h-[200px] sm:min-h-[300px] max-h-[400px] overflow-y-auto markdown-content">
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({node, ...props}) => <h1 className="text-2xl font-bold mb-4 mt-6 text-gray-900" {...props} />,
+                      h2: ({node, ...props}) => <h2 className="text-xl font-bold mb-3 mt-5 text-gray-900" {...props} />,
+                      h3: ({node, ...props}) => <h3 className="text-lg font-bold mb-2 mt-4 text-gray-900" {...props} />,
+                      h4: ({node, ...props}) => <h4 className="text-base font-bold mb-2 mt-3 text-gray-900" {...props} />,
+                      p: ({node, ...props}) => <p className="mb-3 text-gray-800" {...props} />,
+                      strong: ({node, ...props}) => <strong className="font-bold text-gray-900" {...props} />,
+                      em: ({node, ...props}) => <em className="italic text-gray-800" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc list-inside mb-3 space-y-1" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-3 space-y-1" {...props} />,
+                      li: ({node, ...props}) => <li className="text-gray-800 ml-2" {...props} />,
+                      blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-gray-300 pl-4 italic my-3 text-gray-700" {...props} />,
+                      code: ({node, inline, ...props}: any) => inline 
+                        ? <code className="bg-gray-100 rounded px-1 py-0.5 text-sm font-mono text-gray-900" {...props} />
+                        : <code className="block bg-gray-100 rounded p-3 text-sm font-mono overflow-x-auto my-3 text-gray-900" {...props} />,
+                      a: ({node, ...props}) => <a className="text-blue-600 hover:underline" {...props} />,
+                      hr: ({node, ...props}) => <hr className="my-4 border-gray-300" {...props} />,
+                    }}
+                  >
+                    {currentPost}
+                  </ReactMarkdown>
                 </div>
               )}
               {!isEditing && (

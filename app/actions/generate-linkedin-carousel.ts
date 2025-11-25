@@ -110,7 +110,7 @@ export async function generateLinkedInCarousel({
       case "anthropic":
         if (!apiKey) throw new Error("Anthropic API key is required")
         const anthropic = createAnthropic({ apiKey })
-        aiModel = anthropic(model || "claude-3-5-sonnet-20241022")
+        aiModel = anthropic(model || "claude-sonnet-4-5-20250929")
         break
       default:
         throw new Error("Unsupported provider")

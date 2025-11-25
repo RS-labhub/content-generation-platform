@@ -193,7 +193,7 @@ export async function generatePost({
       case "anthropic":
         if (!apiKey) throw new Error("Anthropic API key is required")
         const anthropic = createAnthropic({ apiKey })
-        aiModel = anthropic(model || "claude-3-5-sonnet-20241022")
+        aiModel = anthropic(model || "claude-sonnet-4-5-20250929")
         break
       default:
         throw new Error("Unsupported provider")
@@ -340,6 +340,16 @@ Platform Tone: ${platformInfo.tone}
 Source Content:
 ${content}
 
+CRITICAL FORMATTING REQUIREMENT:
+⚠️ You MUST use proper formatting throughout your response:
+• For ${platform === 'LinkedIn' || platform === 'X' || platform === 'Instagram' || platform === 'Facebook' ? 'SOCIAL MEDIA platforms, use Unicode bold formatting (𝗕𝗼𝗹𝗱) instead of **markdown bold**' : 'Markdown formatting with **bold**'}
+• Use Unicode bold characters: 𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭 𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇 for emphasis
+• Use special bullet symbols: ✦ → • for lists (not markdown * or -)
+• Use proper line breaks between sections for readability
+• For headings, use Unicode bold text, not markdown ## syntax
+• The output should paste perfectly into ${platform} without any special formatting markers
+• Make it ready to copy-paste directly - no conversion needed
+
 Instructions:
 1. Transform the source content into a ${platform}-optimized post
 ${!personaTrainingData ? `2. Follow the custom style approach: "${style}"` : ""}
@@ -350,7 +360,7 @@ ${contentType ? `4. Structure the content as a ${contentType.replace('-', ' ')} 
 5. Use a ${platformInfo.tone} tone
 6. Include relevant hashtags where appropriate for the platform
 7. Ensure it's engaging and platform-appropriate
-8. If the source content is unorganized, structure it clearly
+8. If the source content is unorganized, structure it clearly with Markdown formatting
 9. Make sure the post feels authentic to the platform's culture`
 
     // Add persona training data to the prompt if available
@@ -477,6 +487,17 @@ STEP 4 - QUALITY VERIFICATION:
 ✓ Apply identical vocabulary and language patterns
 ✓ Create content that feels 100% authentic to the persona
 ✓ Make it platform-appropriate for: ${platform}
+✓ Use proper Markdown formatting (**bold**, ## headings, - bullets, etc.)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 FORMATTING REQUIREMENTS:
+• Use Unicode bold characters (𝗔𝗕𝗖 𝗮𝗯𝗰) for ALL emphasis and headings - NOT markdown **bold**
+• Use special bullets: ✦ → • instead of markdown * or -
+• Add proper line breaks between paragraphs for readability
+• Output should paste perfectly into ${platform} without markdown syntax
+• If persona uses special Unicode formatting, replicate it exactly
+• Remember: The goal is copy-paste ready content for social media
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -578,7 +599,7 @@ export async function generateContentDiagram({
       case "anthropic":
         if (!apiKey) throw new Error("Anthropic API key is required")
         const anthropic = createAnthropic({ apiKey })
-        aiModel = anthropic(model || "claude-3-5-sonnet-20241022")
+        aiModel = anthropic(model || "claude-sonnet-4-5-20250929")
         break
       default:
         throw new Error("Unsupported provider")

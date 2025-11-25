@@ -219,6 +219,33 @@ export class APIKeyManager {
       }
     })
   }
+
+  // Migration method to update old Claude model names to new ones
+  migrateClaudeModels(): void {
+    const modelMapping: Record<string, string> = {
+      "claude-3-5-sonnet-20241022": "claude-sonnet-4-5-20250929",
+      "claude-3-5-sonnet-20240620": "claude-sonnet-4-5-20250929",
+      "claude-3-haiku-20240307": "claude-haiku-4-5-20251001",
+      "claude-3-opus-20240229": "claude-opus-4-5-20251101",
+    }
+
+    let updated = false
+    this.configs.forEach((config: APIKeyConfig) => {
+      if (config.provider === "anthropic" && config.models) {
+        const newModels = config.models.map((model: string) => modelMapping[model] || model)
+        if (JSON.stringify(newModels) !== JSON.stringify(config.models)) {
+          config.models = newModels
+          updated = true
+        }
+      }
+    })
+
+    if (updated) {
+      this.saveToStorage()
+      this.notifyListeners()
+      console.log("Successfully migrated Claude model names to latest versions")
+    }
+  }
 }
 
 export const apiKeyManager = APIKeyManager.getInstance()

@@ -331,7 +331,7 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "Anthropic API key is required" }, { status: 400 })
         }
         const anthropicClient = createAnthropic({ apiKey })
-        aiModel = anthropicClient(model || "claude-3-5-sonnet-20241022")
+        aiModel = anthropicClient(model || "claude-sonnet-4-5-20250929")
         break
       default:
         return NextResponse.json({ error: "Invalid provider" }, { status: 400 })

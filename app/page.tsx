@@ -17,6 +17,8 @@ import { Analytics } from "@vercel/analytics/react"
 import { APIKeyDialog } from "@/components/api-key-dialog"
 import { apiKeyManager, type APIProvider } from "@/lib/api-key-manager"
 import { Bot, Cpu, FileImage } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 // Import all the new components
 import { Header } from "@/components/header"
@@ -75,11 +77,11 @@ const allProviders: APIProvider[] = [
     name: "Anthropic",
     description: "Claude models with strong reasoning and safety features",
     icon: <Cpu className="h-4 w-4 text-purple-600" />,
-    model: "Claude 3.5 Sonnet",
+    model: "Claude Sonnet 4.5",
     requiresKey: true,
     keyPlaceholder: "sk-ant-...",
     keyValidation: (key: string) => key.startsWith("sk-ant-") && key.length > 20,
-    defaultModels: ["claude-3-5-sonnet-20241022", "claude-3-haiku-20240307", "claude-3-opus-20240229"],
+    defaultModels: ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101"],
     supportsCustomModels: true,
   },
   {
@@ -173,6 +175,8 @@ interface ChatMessage {
     mermaidDiagram?: string
     imageUrl?: string
     imageConfig?: ImageConfig
+    comments?: string[]
+    isGeneratingComments?: boolean
   }
   status?: "success" | "error"
   error?: string
@@ -265,8 +269,16 @@ export default function ContentPostingPlatform() {
   const [editingDiagramId, setEditingDiagramId] = useState<string | null>(null)
   const [editedDiagramContent, setEditedDiagramContent] = useState<string>("")
   const [useContent, setUseContent] = useState(true)
+  const [sourceComments, setSourceComments] = useState<string[]>([])
+  const [isGeneratingSourceComments, setIsGeneratingSourceComments] = useState(false)
+  const [postCommentCounts, setPostCommentCounts] = useState<{ [key: string]: number }>({})
   const chatContainerRef = useRef<HTMLDivElement | null>(null)
   const { toast } = useToast()
+
+  // Run model migration on mount
+  useEffect(() => {
+    apiKeyManager.migrateClaudeModels()
+  }, [])
 
   // Load saved data on mount
   useEffect(() => {
@@ -939,19 +951,149 @@ export default function ContentPostingPlatform() {
     })
   }
 
+  // Unicode formatting to Markdown conversion for editing
+  const unicodeToMarkdown = (text: string): string => {
+    // Unicode character mappings
+    const boldMap: { [key: string]: string } = {
+      '𝗔': 'A', '𝗕': 'B', '𝗖': 'C', '𝗗': 'D', '𝗘': 'E', '𝗙': 'F', '𝗚': 'G', '𝗛': 'H', '𝗜': 'I', '𝗝': 'J',
+      '𝗞': 'K', '𝗟': 'L', '𝗠': 'M', '𝗡': 'N', '𝗢': 'O', '𝗣': 'P', '𝗤': 'Q', '𝗥': 'R', '𝗦': 'S', '𝗧': 'T',
+      '𝗨': 'U', '𝗩': 'V', '𝗪': 'W', '𝗫': 'X', '𝗬': 'Y', '𝗭': 'Z',
+      '𝗮': 'a', '𝗯': 'b', '𝗰': 'c', '𝗱': 'd', '𝗲': 'e', '𝗳': 'f', '𝗴': 'g', '𝗵': 'h', '𝗶': 'i', '𝗷': 'j',
+      '𝗸': 'k', '𝗹': 'l', '𝗺': 'm', '𝗻': 'n', '𝗼': 'o', '𝗽': 'p', '𝗾': 'q', '𝗿': 'r', '𝘀': 's', '𝘁': 't',
+      '𝘂': 'u', '𝘃': 'v', '𝘄': 'w', '𝘅': 'x', '𝘆': 'y', '𝘇': 'z',
+      '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9'
+    }
+
+    const italicMap: { [key: string]: string } = {
+      '𝘈': 'A', '𝘉': 'B', '𝘊': 'C', '𝘋': 'D', '𝘌': 'E', '𝘍': 'F', '𝘎': 'G', '𝘏': 'H', '𝘐': 'I', '𝘑': 'J',
+      '𝘒': 'K', '𝘓': 'L', '𝘔': 'M', '𝘕': 'N', '𝘖': 'O', '𝘗': 'P', '𝘘': 'Q', '𝘙': 'R', '𝘚': 'S', '𝘛': 'T',
+      '𝘜': 'U', '𝘝': 'V', '𝘞': 'W', '𝘟': 'X', '𝘠': 'Y', '𝘡': 'Z',
+      '𝘢': 'a', '𝘣': 'b', '𝘤': 'c', '𝘥': 'd', '𝘦': 'e', '𝘧': 'f', '𝘨': 'g', '𝘩': 'h', '𝘪': 'i', '𝘫': 'j',
+      '𝘬': 'k', '𝘭': 'l', '𝘮': 'm', '𝘯': 'n', '𝘰': 'o', '𝘱': 'p', '𝘲': 'q', '𝘳': 'r', '𝘴': 's', '𝘵': 't',
+      '𝘶': 'u', '𝘷': 'v', '𝘸': 'w', '𝘹': 'x', '𝘺': 'y', '𝘻': 'z'
+    }
+
+    let convertedText = ''
+    let inBoldSequence = false
+    let inItalicSequence = false
+    let buffer = ''
+
+    // Use Array.from to properly handle Unicode surrogate pairs
+    const chars = Array.from(text)
+    
+    for (let i = 0; i < chars.length; i++) {
+      const char = chars[i]
+      const normalFromBold = boldMap[char]
+      const normalFromItalic = italicMap[char]
+
+      if (normalFromBold) {
+        if (!inBoldSequence) {
+          convertedText += '**'
+          inBoldSequence = true
+        }
+        buffer += normalFromBold
+      } else if (normalFromItalic) {
+        if (!inItalicSequence) {
+          convertedText += '*'
+          inItalicSequence = true
+        }
+        buffer += normalFromItalic
+      } else {
+        // Close any open sequences
+        if (inBoldSequence) {
+          convertedText += buffer + '**'
+          buffer = ''
+          inBoldSequence = false
+        } else if (inItalicSequence) {
+          convertedText += buffer + '*'
+          buffer = ''
+          inItalicSequence = false
+        }
+        convertedText += char
+      }
+    }
+
+    // Close any remaining sequences
+    if (inBoldSequence) {
+      convertedText += buffer + '**'
+    } else if (inItalicSequence) {
+      convertedText += buffer + '*'
+    }
+
+    // Convert special bullets and symbols to markdown
+    convertedText = convertedText.replace(/✦/g, '-').replace(/→/g, '-').replace(/•/g, '-')
+
+    return convertedText
+  }
+
+  // Markdown to Unicode formatting conversion for display
+  const markdownToUnicode = (text: string): string => {
+    const normalToBold: { [key: string]: string } = {
+      'A': '𝗔', 'B': '𝗕', 'C': '𝗖', 'D': '𝗗', 'E': '𝗘', 'F': '𝗙', 'G': '𝗚', 'H': '𝗛', 'I': '𝗜', 'J': '𝗝',
+      'K': '𝗞', 'L': '𝗟', 'M': '𝗠', 'N': '𝗡', 'O': '𝗢', 'P': '𝗣', 'Q': '𝗤', 'R': '𝗥', 'S': '𝗦', 'T': '𝗧',
+      'U': '𝗨', 'V': '𝗩', 'W': '𝗪', 'X': '𝗫', 'Y': '𝗬', 'Z': '𝗭',
+      'a': '𝗮', 'b': '𝗯', 'c': '𝗰', 'd': '𝗱', 'e': '𝗲', 'f': '𝗳', 'g': '𝗴', 'h': '𝗵', 'i': '𝗶', 'j': '𝗷',
+      'k': '𝗸', 'l': '𝗹', 'm': '𝗺', 'n': '𝗻', 'o': '𝗼', 'p': '𝗽', 'q': '𝗾', 'r': '𝗿', 's': '𝘀', 't': '𝘁',
+      'u': '𝘂', 'v': '𝘃', 'w': '𝘄', 'x': '𝘅', 'y': '𝘆', 'z': '𝘇',
+      '0': '𝟬', '1': '𝟭', '2': '𝟮', '3': '𝟯', '4': '𝟰', '5': '𝟱', '6': '𝟲', '7': '𝟳', '8': '𝟴', '9': '𝟵',
+      ' ': ' ', ',': ',', '.': '.', '!': '!', '?': '?', ':': ':', ';': ';', '-': '-', '(': '(', ')': ')',
+      "'": "'", '"': '"', '/': '/', '@': '@', '#': '#', '$': '$', '%': '%', '&': '&', '+': '+', '=': '='
+    }
+
+    const normalToItalic: { [key: string]: string } = {
+      'A': '𝘈', 'B': '𝘉', 'C': '𝘊', 'D': '𝘋', 'E': '𝘌', 'F': '𝘍', 'G': '𝘎', 'H': '𝘏', 'I': '𝘐', 'J': '𝘑',
+      'K': '𝘒', 'L': '𝘓', 'M': '𝘔', 'N': '𝘕', 'O': '𝘖', 'P': '𝘗', 'Q': '𝘘', 'R': '𝘙', 'S': '𝘚', 'T': '𝘛',
+      'U': '𝘜', 'V': '𝘝', 'W': '𝘞', 'X': '𝘟', 'Y': '𝘠', 'Z': '𝘡',
+      'a': '𝘢', 'b': '𝘣', 'c': '𝘤', 'd': '𝘥', 'e': '𝘦', 'f': '𝘧', 'g': '𝘨', 'h': '𝘩', 'i': '𝘪', 'j': '𝘫',
+      'k': '𝘬', 'l': '𝘭', 'm': '𝘮', 'n': '𝘯', 'o': '𝘰', 'p': '𝘱', 'q': '𝘲', 'r': '𝘳', 's': '𝘴', 't': '𝘵',
+      'u': '𝘶', 'v': '𝘷', 'w': '𝘸', 'x': '𝘹', 'y': '𝘺', 'z': '𝘻',
+      ' ': ' ', ',': ',', '.': '.', '!': '!', '?': '?', ':': ':', ';': ';', '-': '-', '(': '(', ')': ')',
+      "'": "'", '"': '"', '/': '/', '@': '@', '#': '#', '$': '$', '%': '%', '&': '&', '+': '+', '=': '='
+    }
+
+    let result = text
+
+    // Convert ***bold italic*** (must be before ** and *)
+    result = result.replace(/\*\*\*(.+?)\*\*\*/g, (match, content) => {
+      return Array.from(content as string).map((char) => normalToBold[char] || char).join('')
+    })
+
+    // Convert **bold** to Unicode bold
+    result = result.replace(/\*\*(.+?)\*\*/g, (match, content) => {
+      return Array.from(content as string).map((char) => normalToBold[char] || char).join('')
+    })
+
+    // Convert *italic* to Unicode italic (but not ** which is already processed)
+    result = result.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, (match, content) => {
+      return Array.from(content as string).map((char) => normalToItalic[char] || char).join('')
+    })
+
+    // Convert __underline__ to Unicode underlined (note: limited Unicode support for underline)
+    result = result.replace(/__(.+?)__/g, (match, content) => {
+      // For now, keep underline as-is since Unicode underline is limited
+      return content
+    })
+
+    return result
+  }
+
   const startEditingPost = (messageId: string, post: string) => {
     setEditingPostId(messageId)
-    setEditedPostContent(post)
+    // Convert Unicode bold to Markdown for editing
+    setEditedPostContent(unicodeToMarkdown(post))
   }
 
   const savePostEdits = (messageId: string) => {
+    // Convert Markdown back to Unicode bold for display
+    const displayContent = markdownToUnicode(editedPostContent)
+    
     setChatHistory((prevHistory) => 
       prevHistory.map((msg) => 
         msg.id === messageId
           ? { 
               ...msg, 
-              content: editedPostContent,
-              payload: { ...msg.payload, post: editedPostContent } 
+              content: displayContent,
+              payload: { ...msg.payload, post: displayContent } 
             }
           : msg
       )
@@ -1162,6 +1304,157 @@ export default function ContentPostingPlatform() {
     await handleSendMessageWithPrompt(prompt)
   }
 
+  const generateComments = async (messageId: string, postContent: string, count?: number) => {
+    // Set generating state for this message
+    setChatHistory((prevHistory) => 
+      prevHistory.map((msg) => 
+        msg.id === messageId
+          ? { 
+              ...msg, 
+              payload: { ...msg.payload, isGeneratingComments: true } 
+            }
+          : msg
+      )
+    )
+
+    try {
+      // Get the count from state or use the provided count or default to 3
+      const commentCount = count || postCommentCounts[messageId] || 3
+      
+      // Prepare the API request
+      const requestBody = {
+        title: context.platform || "Post",
+        content: postContent,
+        link: "",
+        persona: selectedPersona !== "default" ? selectedPersona : "general",
+        keywords: context.keywords || "",
+        count: commentCount,
+        provider: provider,
+        model: activeModel,
+        apiKey: activeKeyId || undefined,
+      }
+
+      // Call the comment generation API
+      const response = await fetch("/api/comment-generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to generate comments")
+      }
+
+      const data = await response.json()
+
+      // Update the message with generated comments
+      setChatHistory((prevHistory) => 
+        prevHistory.map((msg) => 
+          msg.id === messageId
+            ? { 
+                ...msg, 
+                payload: { 
+                  ...msg.payload, 
+                  comments: data.comments,
+                  isGeneratingComments: false 
+                } 
+              }
+            : msg
+        )
+      )
+
+      toast({
+        title: "Comments Generated",
+        description: `${data.comments.length} comments created successfully`,
+      })
+    } catch (error) {
+      console.error("Error generating comments:", error)
+      
+      // Clear generating state on error
+      setChatHistory((prevHistory) => 
+        prevHistory.map((msg) => 
+          msg.id === messageId
+            ? { 
+                ...msg, 
+                payload: { ...msg.payload, isGeneratingComments: false } 
+              }
+            : msg
+        )
+      )
+
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to generate comments",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const generateSourceContentComments = async (count: number = 5) => {
+    if (!content.trim()) {
+      toast({
+        title: "No Content",
+        description: "Please provide source content before generating comments",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsGeneratingSourceComments(true)
+
+    try {
+      // Prepare the API request
+      const requestBody = {
+        title: context.platform || "Source Content",
+        content: content,
+        link: "",
+        persona: selectedPersona !== "default" ? selectedPersona : "general",
+        keywords: context.keywords || "",
+        count: count, // Use the provided count parameter
+        provider: provider,
+        model: activeModel,
+        apiKey: activeKeyId || undefined,
+      }
+
+      // Call the comment generation API
+      const response = await fetch("/api/comment-generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "Failed to generate comments")
+      }
+
+      const data = await response.json()
+
+      // Update source comments
+      setSourceComments(data.comments)
+
+      toast({
+        title: "Comments Generated",
+        description: `${data.comments.length} comments created from source content`,
+      })
+    } catch (error) {
+      console.error("Error generating source comments:", error)
+
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to generate comments",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingSourceComments(false)
+    }
+  }
+
   const handleChatInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault()
@@ -1206,21 +1499,96 @@ export default function ContentPostingPlatform() {
         const post = message.payload?.post || message.content
         const isEditing = editingPostId === message.id
         const displayContent = isEditing ? editedPostContent : post
+        const comments = message.payload?.comments || []
+        const isGeneratingComments = message.payload?.isGeneratingComments || false
         
         return (
           <div className="space-y-3">
             {isEditing ? (
-              <Textarea
-                value={displayContent}
-                onChange={(e) => setEditedPostContent(e.target.value)}
-                className="min-h-[120px] text-sm"
-              />
+              <div className="space-y-2">
+                <Textarea
+                  value={displayContent}
+                  onChange={(e) => setEditedPostContent(e.target.value)}
+                  className="min-h-[120px] text-sm font-mono"
+                  placeholder="Edit your post with Markdown..."
+                />
+                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md">
+                  <span className="font-semibold">Formatting:</span> **bold**, *italic*, ## heading, - bullet points
+                </div>
+              </div>
             ) : (
-              <p className="whitespace-pre-wrap text-sm text-foreground">{displayContent}</p>
+              // Check if content has Unicode bold or Markdown syntax
+              /[\u{1D5D4}-\u{1D5EF}\u{1D5EE}-\u{1D607}\u{1D7CE}-\u{1D7D7}]/u.test(displayContent) ? (
+                // Unicode formatted - display as plain text with preserved formatting
+                <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                  {displayContent}
+                </div>
+              ) : (
+                // Markdown formatted - render with ReactMarkdown
+                <div className="text-sm text-foreground prose prose-sm max-w-none dark:prose-invert">
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({node, ...props}) => <h1 className="text-xl font-bold mb-3 mt-4 text-foreground" {...props} />,
+                      h2: ({node, ...props}) => <h2 className="text-lg font-bold mb-2 mt-3 text-foreground" {...props} />,
+                      h3: ({node, ...props}) => <h3 className="text-base font-bold mb-2 mt-3 text-foreground" {...props} />,
+                      h4: ({node, ...props}) => <h4 className="text-sm font-bold mb-1 mt-2 text-foreground" {...props} />,
+                      p: ({node, ...props}) => <p className="mb-2 text-foreground" {...props} />,
+                      strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />,
+                      em: ({node, ...props}) => <em className="italic text-foreground" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+                      li: ({node, ...props}) => <li className="text-foreground" {...props} />,
+                      blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-primary/40 pl-3 italic my-2 text-muted-foreground" {...props} />,
+                      code: ({node, inline, ...props}: any) => inline 
+                        ? <code className="bg-muted rounded px-1 py-0.5 text-xs font-mono text-foreground" {...props} />
+                        : <code className="block bg-muted rounded p-2 text-xs font-mono overflow-x-auto my-2 text-foreground" {...props} />,
+                      a: ({node, ...props}) => <a className="text-primary hover:underline" {...props} />,
+                      hr: ({node, ...props}) => <hr className="my-3 border-border" {...props} />,
+                    }}
+                  >
+                    {displayContent}
+                  </ReactMarkdown>
+                </div>
+              )
             )}
-            <div className="flex gap-2">
+            
+            {/* Display generated comments */}
+            {comments.length > 0 && (
+              <div className="mt-4 space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <MessageSquare className="size-4 text-primary" />
+                  <span className="text-xs font-semibold uppercase tracking-[0.32em] text-muted-foreground">
+                    Generated Comments ({comments.length})
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {comments.map((comment: string, index: number) => (
+                    <div key={index} className="rounded-lg border border-border/40 bg-background/80 p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-xs text-foreground flex-1">{comment}</p>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(comment, `comment-${message.id}-${index}`)}
+                          className="h-6 w-6 p-0 shrink-0"
+                        >
+                          {copiedStates[`comment-${message.id}-${index}`] ? (
+                            <Check className="size-3" />
+                          ) : (
+                            <Copy className="size-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div className="space-y-2">
               {isEditing ? (
-                <>
+                <div className="flex flex-wrap gap-2">
                   <Button
                     variant="outline"
                     size="sm"
@@ -1239,31 +1607,65 @@ export default function ContentPostingPlatform() {
                     <X className="size-4" />
                     <span className="text-xs font-medium">Cancel</span>
                   </Button>
-                </>
+                </div>
               ) : (
                 <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => copyToClipboard(post, `post-${message.id}`)}
-                    className="rounded-full border-border/70 flex-1"
-                  >
-                    {copiedStates[`post-${message.id}`] ? (
-                      <Check className="size-4" />
-                    ) : (
-                      <Copy className="size-4" />
-                    )}
-                    <span className="text-xs font-medium">Copy post</span>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => startEditingPost(message.id, post)}
-                    className="rounded-full border-border/70 flex-1"
-                  >
-                    <Edit className="size-4" />
-                    <span className="text-xs font-medium">Edit post</span>
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => copyToClipboard(post, `post-${message.id}`)}
+                      className="rounded-full border-border/70 flex-1"
+                    >
+                      {copiedStates[`post-${message.id}`] ? (
+                        <Check className="size-4" />
+                      ) : (
+                        <Copy className="size-4" />
+                      )}
+                      <span className="text-xs font-medium">Copy post</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => startEditingPost(message.id, post)}
+                      className="rounded-full border-border/70 flex-1"
+                    >
+                      <Edit className="size-4" />
+                      <span className="text-xs font-medium">Edit post</span>
+                    </Button>
+                  </div>
+                  
+                  {/* Comment generation section with count selector */}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={postCommentCounts[message.id] || 3}
+                      onChange={(e) => setPostCommentCounts(prev => ({
+                        ...prev,
+                        [message.id]: Math.max(1, Math.min(10, parseInt(e.target.value) || 3))
+                      }))}
+                      className="h-8 w-16 text-xs"
+                      disabled={isGeneratingComments}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => generateComments(message.id, post)}
+                      disabled={isGeneratingComments}
+                      className="rounded-full border-border/70 flex-1"
+                    >
+                      {isGeneratingComments ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <MessageSquare className="size-4" />
+                      )}
+                      <span className="text-xs font-medium">
+                        {comments.length > 0 ? "Regenerate Comments" : "Generate Comments"}
+                      </span>
+                    </Button>
+                  </div>
                 </>
               )}
             </div>
@@ -1534,6 +1936,11 @@ export default function ContentPostingPlatform() {
               onContentChange={setContent}
               platform={context.platform}
               onSuggestionSelect={handlePostSuggestionSelect}
+              sourceComments={sourceComments}
+              isGeneratingSourceComments={isGeneratingSourceComments}
+              onGenerateComments={generateSourceContentComments}
+              onCopyComment={(comment, index) => copyToClipboard(comment, `source-comment-${index}`)}
+              copiedCommentStates={copiedStates}
             />
           </div>
         )
@@ -1556,6 +1963,11 @@ export default function ContentPostingPlatform() {
                 onContentChange={setContent}
                 platform={context.platform}
                 onSuggestionSelect={handlePostSuggestionSelect}
+                sourceComments={sourceComments}
+                isGeneratingSourceComments={isGeneratingSourceComments}
+                onGenerateComments={generateSourceContentComments}
+                onCopyComment={(comment, index) => copyToClipboard(comment, `source-comment-${index}`)}
+                copiedCommentStates={copiedStates}
               />
             </div>
             <LinkedInCarouselConfig carouselSettings={carouselSettings} onCarouselSettingsChange={setCarouselSettings} />
@@ -1836,7 +2248,7 @@ export default function ContentPostingPlatform() {
                               type="button"
                               onClick={() => setActiveMode(modeId)}
                               className={cn(
-                                "group flex items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-shadow",
+                                "group flex items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-shadow cursor-pointer",
                                 isActive
                                   ? "border-border/70 bg-background/95 shadow-[0_20px_50px_-38px_rgba(15,23,42,0.7)]"
                                   : "border-transparent bg-background/30 hover:border-border/60 hover:bg-background/55"

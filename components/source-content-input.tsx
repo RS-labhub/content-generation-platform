@@ -3,7 +3,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
-import { Sparkles, Edit3 } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Sparkles, Edit3, MessageSquare, Copy, Check, Loader2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 interface SourceContentInputProps {
@@ -11,16 +13,27 @@ interface SourceContentInputProps {
   onContentChange: (content: string) => void
   platform: string
   onSuggestionSelect: (suggestion: string) => void
+  sourceComments?: string[]
+  isGeneratingSourceComments?: boolean
+  onGenerateComments?: (count: number) => void
+  onCopyComment?: (comment: string, index: number) => void
+  copiedCommentStates?: { [key: string]: boolean }
 }
 
 export function SourceContentInput({ 
   content, 
   onContentChange,
   platform,
-  onSuggestionSelect 
+  onSuggestionSelect,
+  sourceComments = [],
+  isGeneratingSourceComments = false,
+  onGenerateComments,
+  onCopyComment,
+  copiedCommentStates = {}
 }: SourceContentInputProps) {
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [commentCount, setCommentCount] = useState(5)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Generate suggestions when content changes
@@ -90,6 +103,82 @@ export function SourceContentInput({
           onChange={(e) => onContentChange(e.target.value)}
           className="min-h-[150px] sm:min-h-[200px] max-h-[300px] resize-none text-sm overflow-y-auto"
         />
+        
+        {/* Comment Generation Section */}
+        {content.trim() && onGenerateComments && (
+          <div className="space-y-3">
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <Label htmlFor="comment-count" className="text-xs font-medium mb-1.5 block">
+                  Number of comments
+                </Label>
+                <Input
+                  id="comment-count"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={commentCount}
+                  onChange={(e) => setCommentCount(Math.max(1, Math.min(10, parseInt(e.target.value) || 1)))}
+                  className="h-10"
+                  disabled={isGeneratingSourceComments}
+                />
+              </div>
+              <Button
+                onClick={() => onGenerateComments(commentCount)}
+                disabled={isGeneratingSourceComments}
+                variant="outline"
+                className="flex-[2]"
+              >
+                {isGeneratingSourceComments ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                    {sourceComments.length > 0 ? "Regenerate" : "Generate Comments"}
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Display Source Comments */}
+        {sourceComments.length > 0 && (
+          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <MessageSquare className="h-4 w-4 text-primary" />
+              <span className="text-xs font-semibold uppercase tracking-[0.32em] text-muted-foreground">
+                Generated Comments ({sourceComments.length})
+              </span>
+            </div>
+            <div className="space-y-2">
+              {sourceComments.map((comment, index) => (
+                <div key={index} className="rounded-lg border border-border/40 bg-background/80 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs text-foreground flex-1">{comment}</p>
+                    {onCopyComment && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onCopyComment(comment, index)}
+                        className="h-6 w-6 p-0 shrink-0"
+                      >
+                        {copiedCommentStates[`source-comment-${index}`] ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         {showSuggestions && suggestions.length > 0 && (
           <div className="space-y-2">
