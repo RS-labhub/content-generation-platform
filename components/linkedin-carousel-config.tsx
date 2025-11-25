@@ -16,6 +16,8 @@ interface LinkedInCarouselConfigProps {
     includeOutro: boolean
     carouselTheme: string
     slideFormat: string
+    carouselDepth?: string
+    customDepthDescription?: string
   }
   onCarouselSettingsChange: (settings: any) => void
 }
@@ -161,6 +163,69 @@ export function LinkedInCarouselConfig({
               <SelectItem value="step-by-step">Step-by-Step Guide</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="carousel-depth" className="text-sm font-medium">
+            Content Depth
+          </Label>
+          <Select
+            value={carouselSettings.carouselDepth || "technical"}
+            onValueChange={(value) =>
+              onCarouselSettingsChange({
+                ...carouselSettings,
+                carouselDepth: value,
+              })
+            }
+          >
+            <SelectTrigger id="carousel-depth" className="h-10">
+              <SelectValue placeholder="Select content depth" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="short">
+                <div className="flex flex-col items-start">
+                  <span className="font-medium">Short</span>
+                  <span className="text-xs text-muted-foreground">Brief overviews • Easy to scan</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="technical">
+                <div className="flex flex-col items-start">
+                  <span className="font-medium">Technical</span>
+                  <span className="text-xs text-muted-foreground">Balanced details • Professional depth</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="in-depth">
+                <div className="flex flex-col items-start">
+                  <span className="font-medium">In-Depth</span>
+                  <span className="text-xs text-muted-foreground">Comprehensive • Detailed explanations</span>
+                </div>
+              </SelectItem>
+              <SelectItem value="custom">
+                <div className="flex flex-col items-start">
+                  <span className="font-medium">Custom</span>
+                  <span className="text-xs text-muted-foreground">Define your own depth requirements</span>
+                </div>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          {carouselSettings.carouselDepth === "custom" && (
+            <div className="mt-2">
+              <Input
+                placeholder="Describe your preferred content depth..."
+                value={carouselSettings.customDepthDescription || ""}
+                onChange={(e) =>
+                  onCarouselSettingsChange({
+                    ...carouselSettings,
+                    customDepthDescription: e.target.value,
+                  })
+                }
+                className="h-10"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                E.g., "Include code examples" or "Focus on real-world applications"
+              </p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

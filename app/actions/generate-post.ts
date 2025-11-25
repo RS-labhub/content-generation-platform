@@ -31,6 +31,8 @@ export interface GeneratePostParams {
   keywords: string
   content: string
   contentType?: string
+  postLength?: string
+  customWordCount?: number
   provider: "groq" | "gemini" | "openai" | "anthropic"
   apiKey?: string
   model?: string
@@ -169,6 +171,8 @@ export async function generatePost({
   keywords,
   content,
   contentType,
+  postLength = "medium",
+  customWordCount,
   provider,
   apiKey,
   model,
@@ -324,6 +328,34 @@ ${formatting.structuralMarkers.includes('triple-dash') ? '✅ Use --- for sectio
 
     const platformInfo = platformGuidelines[platform as keyof typeof platformGuidelines] || platformGuidelines.linkedin
 
+    // Determine length constraints based on postLength setting
+    const lengthGuidelines = {
+      small: {
+        wordCount: "50-150 words",
+        description: "Brief and punchy. Get to the point quickly with concise messaging.",
+        emphasis: "Focus on one key idea or message"
+      },
+      medium: {
+        wordCount: "150-300 words",
+        description: "Balanced content with proper context and explanation.",
+        emphasis: "Develop the main idea with supporting details"
+      },
+      large: {
+        wordCount: "300-500 words",
+        description: "In-depth discussion with comprehensive coverage of the topic.",
+        emphasis: "Provide thorough analysis, examples, and detailed insights"
+      },
+      custom: {
+        wordCount: customWordCount ? `approximately ${customWordCount} words` : "150-300 words",
+        description: customWordCount 
+          ? `Custom length targeting ${customWordCount} words. Adjust depth and detail accordingly.`
+          : "Balanced content with proper context and explanation.",
+        emphasis: "Match the specified word count while maintaining quality"
+      }
+    }
+
+    const lengthInfo = lengthGuidelines[postLength as keyof typeof lengthGuidelines] || lengthGuidelines.medium
+
     // Build the prompt with persona training data if available
     let prompt = `
 You are an expert social media content creator. Generate a ${platform} post based on the following:
@@ -336,6 +368,12 @@ ${contentType ? `Content Type: ${contentType}` : ""}
 Platform Guidelines: ${platformInfo.description}
 Length Requirement: ${platformInfo.maxLength}
 Platform Tone: ${platformInfo.tone}
+
+POST LENGTH CONTROL:
+Target Length: ${lengthInfo.wordCount}
+Length Description: ${lengthInfo.description}
+Content Approach: ${lengthInfo.emphasis}
+CRITICAL: Strictly adhere to the ${lengthInfo.wordCount} constraint. ${postLength === 'custom' && customWordCount ? `Aim for exactly ${customWordCount} words.` : ''}
 
 Source Content:
 ${content}

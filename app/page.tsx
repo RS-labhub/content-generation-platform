@@ -103,6 +103,8 @@ interface PostContext {
   style: string
   keywords: string
   contentType?: string
+  postLength?: string
+  customWordCount?: number
 }
 
 type WorkbenchMode = "post" | "image" | "carousel" | "diagram"
@@ -224,6 +226,8 @@ export default function ContentPostingPlatform() {
     platform: "LinkedIn",
     style: "",
     keywords: "",
+    postLength: "medium",
+    customWordCount: undefined,
   })
   const [content, setContent] = useState("")
   const [diagramContent, setDiagramContent] = useState("")
@@ -238,7 +242,9 @@ export default function ContentPostingPlatform() {
     includeIntro: true,
     includeOutro: true,
     carouselTheme: "professional",
-    slideFormat: "headline-body"
+    slideFormat: "headline-body",
+    carouselDepth: "technical",
+    customDepthDescription: ""
   })
   const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({})
   const [selectedPersona, setSelectedPersona] = useState<string>("default")
@@ -296,6 +302,8 @@ export default function ContentPostingPlatform() {
           style: parsed.style || "",
           keywords: parsed.keywords || "",
           contentType: parsed.contentType || undefined,
+          postLength: parsed.postLength || "medium",
+          customWordCount: parsed.customWordCount || undefined,
         })
       } catch (error) {
         console.error("Error parsing saved context:", error)
@@ -561,6 +569,8 @@ export default function ContentPostingPlatform() {
         keywords: context.keywords,
         content: combinedContent,
         contentType: context.contentType,
+        postLength: context.postLength,
+        customWordCount: context.customWordCount,
         provider: provider,
         apiKey: getActiveApiKey() || undefined,
         model: activeModel || undefined,
@@ -659,6 +669,8 @@ export default function ContentPostingPlatform() {
         includeOutro: carouselSettings.includeOutro,
         carouselTheme: carouselSettings.carouselTheme,
         slideFormat: carouselSettings.slideFormat,
+        carouselDepth: carouselSettings.carouselDepth,
+        customDepthDescription: carouselSettings.customDepthDescription,
         provider: provider,
         apiKey: getActiveApiKey() || undefined,
         model: activeModel || undefined,

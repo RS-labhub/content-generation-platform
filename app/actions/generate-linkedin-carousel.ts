@@ -35,6 +35,8 @@ export interface GenerateLinkedInCarouselParams {
   includeOutro: boolean
   carouselTheme: string
   slideFormat: string
+  carouselDepth?: string
+  customDepthDescription?: string
   provider: "groq" | "gemini" | "openai" | "anthropic"
   apiKey?: string
   model?: string
@@ -86,6 +88,8 @@ export async function generateLinkedInCarousel({
   includeOutro,
   carouselTheme,
   slideFormat,
+  carouselDepth = "technical",
+  customDepthDescription,
   provider,
   apiKey,
   model,
@@ -156,6 +160,40 @@ ${patterns.exclamationPatterns.length > 0 ? `- Use exclamations like: "${pattern
       }
     }
 
+    // Determine content depth guidelines
+    const depthGuidelines = {
+      short: {
+        description: "Brief overviews with key takeaways",
+        slideContent: "2-3 short sentences or 3-4 bullet points per slide",
+        detailLevel: "High-level concepts only, easy to scan quickly",
+        approach: "Focus on the what, not the how or why"
+      },
+      technical: {
+        description: "Balanced depth with professional insights",
+        slideContent: "3-5 sentences or 4-6 bullet points per slide",
+        detailLevel: "Moderate detail with context and explanations",
+        approach: "Balance overview with practical insights and context"
+      },
+      "in-depth": {
+        description: "Comprehensive coverage with detailed explanations",
+        slideContent: "4-7 sentences or 5-8 bullet points per slide",
+        detailLevel: "Thorough analysis with examples, data, and deep insights",
+        approach: "Explain the what, how, and why with supporting evidence"
+      },
+      custom: {
+        description: customDepthDescription || "Balanced depth with professional insights",
+        slideContent: customDepthDescription 
+          ? "Adjust content density based on custom requirements"
+          : "3-5 sentences or 4-6 bullet points per slide",
+        detailLevel: customDepthDescription || "Moderate detail with context and explanations",
+        approach: customDepthDescription 
+          ? "Follow the specified depth requirements while maintaining engagement"
+          : "Balance overview with practical insights and context"
+      }
+    }
+
+    const depthInfo = depthGuidelines[carouselDepth as keyof typeof depthGuidelines] || depthGuidelines.technical
+
     // Set up a prompt for generating a LinkedIn carousel
     let prompt = `You are a professional LinkedIn content creator specializing in creating high-quality carousel posts that drive engagement. 
 
@@ -178,6 +216,15 @@ Create a ${slideCount}-slide LinkedIn carousel based on the source content. Foll
 9. Include relevant hashtags in the outro slide
 10. Make the content SEO-friendly and optimized for LinkedIn's algorithm
 11. Ensure each slide stands alone but also flows into the next
+
+CONTENT DEPTH CONTROL:
+Depth Level: ${carouselDepth.toUpperCase()}
+Description: ${depthInfo.description}
+Slide Content Guideline: ${depthInfo.slideContent}
+Detail Level: ${depthInfo.detailLevel}
+Content Approach: ${depthInfo.approach}
+CRITICAL: Strictly follow the ${carouselDepth} depth guidelines to ensure appropriate content density per slide.
+${carouselDepth === 'custom' && customDepthDescription ? `Custom Requirements: ${customDepthDescription}` : ''}
 `
 
     // Add persona training data to the prompt if available
