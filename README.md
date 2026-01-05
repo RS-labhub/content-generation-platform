@@ -184,7 +184,7 @@ This project is licensed under the MIT License - see the [LICENSE](https://githu
 
 <div align="center">
 
-**Built with 💔 by [ROhan Sharma](https://github.com/RS-labhub)**
+**Built with 💔 by [Rohan Sharma](https://github.com/RS-labhub)**
 
 [Portfolio](https://rohan-sharma-portfolio.vercel.app/) | [GitHub](https://github.com/RS-labhub) | [LinkedIn](https://www.linkedin.com/in/rohan-sharma-9386rs/)
 
