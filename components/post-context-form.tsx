@@ -141,7 +141,8 @@ export function PostContextForm({
           <Label htmlFor="platform" className="text-sm font-medium">
             Platform
           </Label>
-          <Select value={context.platform} onValueChange={(value) => onContextChange({ ...context, platform: value })}>
+          {/* Default to linkedin when no platform is set */}
+          <Select value={context.platform || "linkedin"} onValueChange={(value) => onContextChange({ ...context, platform: value })}>
             <SelectTrigger className="h-10">
               <SelectValue placeholder="Select platform" />
             </SelectTrigger>
@@ -158,6 +159,61 @@ export function PostContextForm({
               <SelectItem value="threads">Threads</SelectItem>
             </SelectContent>
           </Select>
+
+          {/* Post Length Control placed directly under Platform as requested */}
+          <div className="space-y-2">
+            <Label htmlFor="post-length" className="text-sm font-medium">
+              Post Length
+            </Label>
+            <Select
+              value={context.postLength || "medium"}
+              onValueChange={(value) => onContextChange({ ...context, postLength: value })}
+            >
+              <SelectTrigger className="h-10">
+                <SelectValue placeholder="Select post length" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="small">
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">Small</span>
+                    <span className="text-xs text-muted-foreground">50-150 words • Quick & punchy</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="medium">
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">Medium</span>
+                    <span className="text-xs text-muted-foreground">150-300 words • Balanced content</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="large">
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">Large</span>
+                    <span className="text-xs text-muted-foreground">300-500 words • In-depth discussion</span>
+                  </div>
+                </SelectItem>
+                <SelectItem value="custom">
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">Custom</span>
+                    <span className="text-xs text-muted-foreground">Specify your own word count</span>
+                  </div>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {context.postLength === "custom" && (
+              <div className="mt-2">
+                <Input
+                  type="number"
+                  placeholder="Enter word count"
+                  min="10"
+                  max="1000"
+                  value={context.customWordCount || ""}
+                  onChange={(e) => onContextChange({ ...context, customWordCount: parseInt(e.target.value) || undefined })}
+                  className="h-10"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Target word count for your post</p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Content Type Selection */}
@@ -431,60 +487,7 @@ export function PostContextForm({
           <p className="text-xs text-gray-500">Comma-separated keywords to emphasize in your post</p>
         </div>
 
-        {/* Post Length Control */}
-        <div className="space-y-2">
-          <Label htmlFor="post-length" className="text-sm font-medium">
-            Post Length
-          </Label>
-          <Select 
-            value={context.postLength || "medium"} 
-            onValueChange={(value) => onContextChange({ ...context, postLength: value })}
-          >
-            <SelectTrigger className="h-10">
-              <SelectValue placeholder="Select post length" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="small">
-                <div className="flex flex-col items-start">
-                  <span className="font-medium">Small</span>
-                  <span className="text-xs text-muted-foreground">50-150 words • Quick & punchy</span>
-                </div>
-              </SelectItem>
-              <SelectItem value="medium">
-                <div className="flex flex-col items-start">
-                  <span className="font-medium">Medium</span>
-                  <span className="text-xs text-muted-foreground">150-300 words • Balanced content</span>
-                </div>
-              </SelectItem>
-              <SelectItem value="large">
-                <div className="flex flex-col items-start">
-                  <span className="font-medium">Large</span>
-                  <span className="text-xs text-muted-foreground">300-500 words • In-depth discussion</span>
-                </div>
-              </SelectItem>
-              <SelectItem value="custom">
-                <div className="flex flex-col items-start">
-                  <span className="font-medium">Custom</span>
-                  <span className="text-xs text-muted-foreground">Specify your own word count</span>
-                </div>
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          {context.postLength === "custom" && (
-            <div className="mt-2">
-              <Input
-                type="number"
-                placeholder="Enter word count"
-                min="10"
-                max="1000"
-                value={context.customWordCount || ""}
-                onChange={(e) => onContextChange({ ...context, customWordCount: parseInt(e.target.value) || undefined })}
-                className="h-10"
-              />
-              <p className="text-xs text-muted-foreground mt-1">Target word count for your post</p>
-            </div>
-          )}
-        </div>
+        
       </CardContent>
     </Card>
   )

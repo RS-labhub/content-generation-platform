@@ -60,6 +60,7 @@ export function PersonaTrainingDialog({
   const [contentType, setContentType] = useState<"posts" | "blogs" | "mixed">("mixed")
   const [trainingContent, setTrainingContent] = useState("")
   const [instructions, setInstructions] = useState("")
+  const [commentInstructions, setCommentInstructions] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [existingPersonas, setExistingPersonas] = useState<any[]>([])
   const [selectedPersona, setSelectedPersona] = useState<string>("")
@@ -110,6 +111,7 @@ export function PersonaTrainingDialog({
         setPersonaName(persona.name)
         setTrainingContent(persona.rawContent)
         setInstructions(persona.instructions || "")
+        setCommentInstructions(persona.commentInstructions || "")
         setContentType(persona.contentType || "mixed")
       }
     } catch (error) {
@@ -134,6 +136,7 @@ export function PersonaTrainingDialog({
         trainingContent.trim(),
         contentType,
         instructions.trim() || undefined,
+        commentInstructions.trim() || undefined,
       )
 
       toast({
@@ -332,6 +335,7 @@ export function PersonaTrainingDialog({
     setPersonaName("")
     setTrainingContent("")
     setInstructions("")
+    setCommentInstructions("")
     setContentType("mixed")
     setSelectedPersona("")
     setIsEditing(false)
@@ -723,6 +727,23 @@ export function PersonaTrainingDialog({
                 />
                 <p className="text-xs text-muted-foreground">
                   These instructions will guide the AI on your preferred writing style and approach.
+                </p>
+              </div>
+
+              {/* Comment Instructions */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Comment Instructions (Optional)
+                </Label>
+                <Textarea
+                  placeholder="Provide specific instructions for how the AI should write comments. For example: 'Keep comments concise and add value, ask thoughtful questions, avoid generic praise, use a friendly but professional tone...'"
+                  value={commentInstructions}
+                  onChange={(e) => setCommentInstructions(e.target.value)}
+                  className="min-h-[80px] resize-none"
+                />
+                <p className="text-xs text-muted-foreground">
+                  These instructions will guide the AI when generating comments on posts.
                 </p>
               </div>
 

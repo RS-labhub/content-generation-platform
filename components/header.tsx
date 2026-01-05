@@ -1,6 +1,8 @@
-import { Badge } from '@/components/ui/badge'
+﻿import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { ThemeSwitcher } from '@/components/theme-switcher'
-import { Sparkles, Wand2, ShieldCheck, TimerReset } from 'lucide-react'
+import { Sparkles, Wand2, ShieldCheck, TimerReset, Layers } from 'lucide-react'
+import Link from 'next/link'
 
 export function Header() {
   const featureChips = [
@@ -36,16 +38,28 @@ export function Header() {
             Publish faster with creative guardrails your marketing, product, and leadership teams can trust.
           </p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {featureChips.map((feature) => (
-            <div
-              key={feature.label}
-              className="flex items-center gap-2 rounded-2xl border border-border/70 bg-secondary/60 px-4 py-3 text-sm text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/50 hover:bg-secondary/80"
+        <div className="flex flex-col gap-4">
+          {/* CTA Button - Hidden on small/medium screens, prominent on large screens */}
+          <Link href="/carousel-designer" target="_blank" className="hidden lg:block w-fit">
+            <Button 
+              size="lg" 
+              className="gap-3 rounded-full shadow-[0_20px_50px_-20px_rgba(99,102,241,0.5)] hover:shadow-[0_25px_60px_-15px_rgba(99,102,241,0.6)] transition-all duration-300 bg-primary hover:bg-primary/90 text-base px-8 py-6 font-semibold"
             >
-              {feature.icon}
-              <span>{feature.label}</span>
-            </div>
-          ))}
+              <Layers className="h-5 w-5" />
+              Open Carousel Builder
+            </Button>
+          </Link>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {featureChips.map((feature) => (
+              <div
+                key={feature.label}
+                className="flex items-center gap-2 rounded-2xl border border-border/70 bg-secondary/60 px-4 py-3 text-sm text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/50 hover:bg-secondary/80"
+              >
+                {feature.icon}
+                <span>{feature.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -57,7 +71,7 @@ export function Header() {
           </div>
           <ThemeSwitcher size="default" variant="outline" />
         </div>
-        <div className="space-y-4 text-sm text-muted-foreground">
+  <div className="space-y-6 text-sm text-muted-foreground">
           <p>
             Switch between light and dark experiences instantly. The design system stays consistent across every surface,
             whether you&apos;re planning campaigns in daylight or iterating with your team after hours.
@@ -70,6 +84,22 @@ export function Header() {
               <li>• Motion-ready components for immersive UX</li>
             </ul>
           </div>
+          {/* CTA Button - centered on large screens */}
+          <div className="hidden lg:flex w-full justify-center">
+            <Link href="/carousel-designer" className="w-fit">
+              <Button
+                size="lg"
+                aria-label="Open Carousel Builder"
+                className="inline-flex items-center gap-3 rounded-full shadow-[0_20px_50px_-20px_rgba(99,102,241,0.5)] hover:shadow-[0_25px_60px_-15px_rgba(99,102,241,0.6)] transition-all duration-300 bg-primary hover:bg-primary/95 text-base px-5 py-2.5 font-semibold w-fit focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <Layers className="h-5 w-5" />
+                Try Carousel Builder NOW!
+              </Button>
+            </Link>
+          </div>
+          <p className="hidden lg:block mt-2 text-center text-sm text-muted-foreground max-w-xs mx-auto">
+            Get started with 25+ Free Professional Templates
+          </p>
         </div>
       </div>
     </header>
