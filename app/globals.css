@@ -124,6 +124,14 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+
+  /* Make sure all native buttons and button-like controls show pointer cursor */
+  button,
+  input[type="button"],
+  input[type="submit"],
+  [role="button"] {
+    cursor: pointer;
+  }
 }
 
 @layer utilities {
@@ -138,6 +146,28 @@
     word-wrap: break-word;
     word-break: break-word;
   }
+
+  /* Hide scrollbar utility */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Carousel Designer Font Families */
+  .font-inter { font-family: var(--font-inter), 'Inter', sans-serif; }
+  .font-poppins { font-family: var(--font-poppins), 'Poppins', sans-serif; }
+  .font-montserrat { font-family: var(--font-montserrat), 'Montserrat', sans-serif; }
+  .font-open-sans { font-family: var(--font-open-sans), 'Open Sans', sans-serif; }
+  .font-playfair { font-family: var(--font-playfair), 'Playfair Display', serif; }
+  .font-lora { font-family: var(--font-lora), 'Lora', serif; }
+  .font-bebas { font-family: var(--font-bebas), 'Bebas Neue', sans-serif; }
+  .font-oswald { font-family: var(--font-oswald), 'Oswald', sans-serif; }
+  .font-raleway { font-family: var(--font-raleway), 'Raleway', sans-serif; }
+  .font-merriweather { font-family: var(--font-merriweather), 'Merriweather', serif; }
+  .font-source-code { font-family: var(--font-source-code), 'Source Code Pro', monospace; }
 
   .surface-panel {
     @apply relative overflow-hidden;
@@ -227,5 +257,44 @@
 
   .chat-scroll-area {
     scrollbar-width: thin;
+  }
+
+  /* Dynamic glowing border animation for help dialog */
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow: 0 0 15px rgba(139, 92, 246, 0.4),
+                  0 0 30px rgba(139, 92, 246, 0.2),
+                  0 0 45px rgba(255, 255, 255, 0.15);
+      border-color: rgba(139, 92, 246, 0.6);
+    }
+    50% {
+      box-shadow: 0 0 25px rgba(139, 92, 246, 0.6),
+                  0 0 40px rgba(139, 92, 246, 0.3),
+                  0 0 60px rgba(255, 255, 255, 0.25);
+      border-color: rgba(139, 92, 246, 0.9);
+    }
+  }
+
+  @keyframes pulse-glow-dark {
+    0%, 100% {
+      box-shadow: 0 0 20px rgba(167, 139, 250, 0.5),
+                  0 0 35px rgba(167, 139, 250, 0.3),
+                  0 0 50px rgba(0, 0, 0, 0.4);
+      border-color: rgba(167, 139, 250, 0.7);
+    }
+    50% {
+      box-shadow: 0 0 30px rgba(167, 139, 250, 0.7),
+                  0 0 50px rgba(167, 139, 250, 0.4),
+                  0 0 70px rgba(0, 0, 0, 0.6);
+      border-color: rgba(167, 139, 250, 1);
+    }
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+
+  .dark .animate-pulse-glow {
+    animation: pulse-glow-dark 3s ease-in-out infinite;
   }
 }

@@ -31,8 +31,8 @@ export function Footer() {
 
   return (
     <footer className="flex flex-col gap-8 border-t border-border/60 pt-10">
-      <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-        <div className="space-y-3">
+      <div className="flex flex-col gap-8 items-center lg:flex-row lg:items-center lg:justify-center">
+        <div className="space-y-3 text-center lg:text-left">
           <div className="flex items-center gap-3 text-sm font-medium text-muted-foreground">
             <HeartCrack className="size-4 text-primary" aria-hidden="true" />
             Crafted by Rohan Sharma driven by Radhika Sharma
@@ -54,7 +54,7 @@ export function Footer() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 justify-center">
           {socialLinks.map((link) => (
             <Button
               key={link.label}
@@ -70,9 +70,9 @@ export function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-border/50 pt-6 text-xs text-muted-foreground flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <div className="border-t border-border/50 pt-6 text-xs text-muted-foreground flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-center sm:gap-4">
         <span>© {currentYear} Content Generation Platform. All rights reserved.</span>
-        <span className="text-muted-foreground/70">
+        <span className="text-muted-foreground/70 text-center">
           Waiting for her is <strong>eternal</strong> but <strong>beautiful</strong>. Can you imagine how adorable she is?
         </span>
       </div>

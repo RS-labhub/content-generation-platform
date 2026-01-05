@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Loader2, Sparkles, Zap, Brain, BarChart3Icon as Diagram3, Layers, Settings2, Send, MessageSquare, Copy, Check, Download, Edit, Save, X, RotateCcw, FileText } from "lucide-react"
+import { Loader2, Sparkles, BarChart3Icon as Diagram3, Layers, Settings2, Send, MessageSquare, Copy, Check, Download, Edit, Save, X, RotateCcw, FileText, Bot } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { generatePost, generateContentDiagram } from "./actions/generate-post"
 import { generateLinkedInCarousel } from "./actions/generate-linkedin-carousel"
@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Analytics } from "@vercel/analytics/react"
 import { APIKeyDialog } from "@/components/api-key-dialog"
 import { apiKeyManager, type APIProvider } from "@/lib/api-key-manager"
-import { Bot, Cpu, FileImage } from "lucide-react"
+import { FileImage } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
@@ -38,65 +38,11 @@ import { cn } from "@/lib/utils"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ChevronDown, ChevronUp } from "lucide-react"
 
-// Define all providers including the new ones
-const allProviders: APIProvider[] = [
-  {
-    id: "groq",
-    name: "GROQ",
-    description: "Ultra-fast inference with excellent performance for creative content generation",
-    icon: <Zap className="h-4 w-4 text-orange-600" />,
-    model: "llama-3.1-8b-instant",
-    requiresKey: false,
-    keyPlaceholder: "",
-    keyValidation: () => true,
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    description: "Google's advanced AI with strong reasoning capabilities and multimodal understanding",
-    icon: <Brain className="h-4 w-4 text-blue-600" />,
-    model: "gemini-2.0-flash",
-    requiresKey: false,
-    keyPlaceholder: "",
-    keyValidation: () => true,
-  },
-  {
-    id: "openai",
-    name: "OpenAI",
-    description: "GPT models with excellent reasoning and creative capabilities",
-    icon: <Bot className="h-4 w-4 text-green-600" />,
-    model: "GPT-4",
-    requiresKey: true,
-    keyPlaceholder: "sk-...",
-    keyValidation: (key: string) => key.startsWith("sk-") && key.length > 20,
-    defaultModels: ["gpt-4", "gpt-4-turbo", "gpt-3.5-turbo"],
-    supportsCustomModels: true,
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    description: "Claude models with strong reasoning and safety features",
-    icon: <Cpu className="h-4 w-4 text-purple-600" />,
-    model: "Claude Sonnet 4.5",
-    requiresKey: true,
-    keyPlaceholder: "sk-ant-...",
-    keyValidation: (key: string) => key.startsWith("sk-ant-") && key.length > 20,
-    defaultModels: ["claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001", "claude-opus-4-5-20251101"],
-    supportsCustomModels: true,
-  },
-  {
-    id: "huggingface",
-    name: "Hugging Face",
-    description: "Access to a wide variety of open-source models and cutting-edge AI research",
-    icon: <FileImage className="h-4 w-4 text-yellow-600" />,
-    model: "Llama & FLUX Models",
-    requiresKey: true,
-    keyPlaceholder: "hf_...",
-    keyValidation: (key: string) => key.startsWith("hf_") && key.length > 20,
-    defaultModels: ["meta-llama/Llama-2-7b-chat-hf", "black-forest-labs/FLUX.1-schnell", "stabilityai/stable-diffusion-xl-base-1.0"],
-    supportsCustomModels: true,
-  },
-]
+// Import centralized provider configuration
+import { ALL_PROVIDERS, IMAGE_PROVIDERS, IMAGE_SIZES, IMAGE_STYLES } from "@/lib/ai-providers-client"
+
+// Use centralized providers
+const allProviders = ALL_PROVIDERS
 
 interface PostContext {
   platform: string
@@ -197,29 +143,10 @@ interface ImageConfig {
   customPrompt?: string
 }
 
-const imageProviderOptions = [
-  { value: "pollinations_free", label: "AI Image Generator (Free)" },
-  { value: "free_alternatives", label: "Free Alternatives" },
-  { value: "huggingface", label: "Hugging Face (API Key)" },
-  { value: "openai", label: "OpenAI DALL·E" },
-]
-
-const imageSizeOptions = [
-  { value: "square_large", label: "Square (1024 × 1024)" },
-  { value: "post", label: "Post (1200 × 675)" },
-  { value: "portrait", label: "Portrait (768 × 1024)" },
-  { value: "landscape", label: "Landscape (1024 × 768)" },
-]
-
-const imageStyleOptions = [
-  { value: "realistic", label: "Photorealistic" },
-  { value: "minimalist", label: "Minimalist" },
-  { value: "cartoon", label: "Cartoon" },
-  { value: "watercolor", label: "Watercolor" },
-  { value: "cyberpunk", label: "Cyberpunk" },
-  { value: "pixel_art", label: "Pixel Art" },
-  { value: "custom", label: "Custom" },
-]
+// Use centralized image configuration
+const imageProviderOptions = IMAGE_PROVIDERS
+const imageSizeOptions = IMAGE_SIZES
+const imageStyleOptions = IMAGE_STYLES
 
 export default function ContentPostingPlatform() {
   const [context, setContext] = useState<PostContext>({
@@ -553,8 +480,23 @@ export default function ContentPostingPlatform() {
       }
 
       const contentToUse = useContent ? content.trim() : ""
-      const combinedContent = [contentToUse, prompt.trim()].filter(Boolean).join("\n\n")
-      if (!combinedContent) {
+      
+      // When source is ON: content = source material, prompt = user's instructions
+      // When source is OFF: prompt = the content to generate from
+      let sourceContent = ""
+      let userInstructions = ""
+      
+      if (useContent && contentToUse) {
+        // Source is enabled - use source as base content, chat message as instructions
+        sourceContent = contentToUse
+        userInstructions = prompt.trim()
+      } else {
+        // Source is disabled - use chat message as the content
+        sourceContent = prompt.trim()
+        userInstructions = ""
+      }
+      
+      if (!sourceContent) {
         toast({
           title: "Missing Content",
           description: "Provide a prompt or base content for the assistant to work with.",
@@ -567,7 +509,7 @@ export default function ContentPostingPlatform() {
         platform: context.platform,
         style: context.style,
         keywords: context.keywords,
-        content: combinedContent,
+        content: sourceContent,
         contentType: context.contentType,
         postLength: context.postLength,
         customWordCount: context.customWordCount,
@@ -576,6 +518,7 @@ export default function ContentPostingPlatform() {
         model: activeModel || undefined,
         persona: personaData,
         context: contextData,
+        userInstructions: userInstructions || undefined,
       })
 
       if (result.success && result.post) {
@@ -649,8 +592,21 @@ export default function ContentPostingPlatform() {
       }
 
       const contentToUse = useContent ? content.trim() : ""
-      const combinedContent = [contentToUse, prompt.trim()].filter(Boolean).join("\n\n")
-      if (!combinedContent) {
+      
+      // When source is ON: content = source material, prompt = user's instructions
+      // When source is OFF: prompt = the content to generate from
+      let sourceContent = ""
+      let userInstructions = ""
+      
+      if (useContent && contentToUse) {
+        sourceContent = contentToUse
+        userInstructions = prompt.trim()
+      } else {
+        sourceContent = prompt.trim()
+        userInstructions = ""
+      }
+      
+      if (!sourceContent) {
         toast({
           title: "Missing Content",
           description: "Provide a prompt or base content for carousel generation.",
@@ -663,7 +619,7 @@ export default function ContentPostingPlatform() {
         platform: context.platform,
         style: context.style,
         keywords: context.keywords,
-        content: combinedContent,
+        content: sourceContent,
         slideCount: carouselSettings.slideCount,
         includeIntro: carouselSettings.includeIntro,
         includeOutro: carouselSettings.includeOutro,
@@ -676,6 +632,7 @@ export default function ContentPostingPlatform() {
         model: activeModel || undefined,
         persona: personaData,
         context: contextData,
+        userInstructions: userInstructions || undefined,
       })
 
       if (result.success && result.carousel) {
@@ -1359,17 +1316,39 @@ export default function ContentPostingPlatform() {
       // Get the count from state or use the provided count or default to 3
       const commentCount = count || postCommentCounts[messageId] || 3
       
-      // Prepare the API request
+      // Get persona training data if a persona is selected
+      let clientPersonaTrainingData: any[] = []
+      if (selectedPersona && selectedPersona !== "default") {
+        const persona = getPersonaTrainingDataWithType(selectedPersona)
+        if (persona) {
+          clientPersonaTrainingData = [{
+            name: persona.name,
+            type: persona.contentType || "mixed",
+            writingSamples: persona.rawContent?.split(/---+|===+/) || [],
+            styleNotes: persona.instructions || "",
+            commentInstructions: persona.commentInstructions || "",
+          }]
+        }
+      }
+
+      // Get context data if a context is selected
+      let clientContextData: any[] = []
+      if (selectedContext) {
+        const ctx = getContextData(selectedContext)
+        if (ctx) {
+          clientContextData = [{ name: ctx.name, type: ctx.category, content: ctx.data?.rawContent || "" }]
+        }
+      }
+
+      // Prepare the API request with correct parameter names
       const requestBody = {
-        title: context.platform || "Post",
-        content: postContent,
-        link: "",
-        persona: selectedPersona !== "default" ? selectedPersona : "general",
-        keywords: context.keywords || "",
-        count: commentCount,
-        provider: provider,
-        model: activeModel,
+        prompt: `Generate ${commentCount} engaging comment${commentCount > 1 ? 's' : ''} for this ${context.platform || "LinkedIn"} post:\n\n${postContent}`,
+        selectedProvider: provider,
+        selectedModel: activeModel,
         apiKey: activeKeyId || undefined,
+        clientPersonaTrainingData,
+        clientContextData,
+        platform: context.platform?.toLowerCase() || "linkedin",
       }
 
       // Call the comment generation API
@@ -1444,17 +1423,39 @@ export default function ContentPostingPlatform() {
     setIsGeneratingSourceComments(true)
 
     try {
-      // Prepare the API request
+      // Get persona training data if a persona is selected
+      let clientPersonaTrainingData: any[] = []
+      if (selectedPersona && selectedPersona !== "default") {
+        const persona = getPersonaTrainingDataWithType(selectedPersona)
+        if (persona) {
+          clientPersonaTrainingData = [{
+            name: persona.name,
+            type: persona.contentType || "mixed",
+            writingSamples: persona.rawContent?.split(/---+|===+/) || [],
+            styleNotes: persona.instructions || "",
+            commentInstructions: persona.commentInstructions || "",
+          }]
+        }
+      }
+
+      // Get context data if a context is selected
+      let clientContextData: any[] = []
+      if (selectedContext) {
+        const ctx = getContextData(selectedContext)
+        if (ctx) {
+          clientContextData = [{ name: ctx.name, type: ctx.category, content: ctx.data?.rawContent || "" }]
+        }
+      }
+
+      // Prepare the API request with correct parameter names
       const requestBody = {
-        title: context.platform || "Source Content",
-        content: content,
-        link: "",
-        persona: selectedPersona !== "default" ? selectedPersona : "general",
-        keywords: context.keywords || "",
-        count: count, // Use the provided count parameter
-        provider: provider,
-        model: activeModel,
+        prompt: `Generate ${count} engaging comment${count > 1 ? 's' : ''} for this ${context.platform || "LinkedIn"} content:\n\n${content}`,
+        selectedProvider: provider,
+        selectedModel: activeModel,
         apiKey: activeKeyId || undefined,
+        clientPersonaTrainingData,
+        clientContextData,
+        platform: context.platform?.toLowerCase() || "linkedin",
       }
 
       // Call the comment generation API
@@ -1777,6 +1778,32 @@ export default function ContentPostingPlatform() {
                     <Edit className="size-4" />
                     <span className="text-xs font-medium">Edit slides</span>
                   </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      // Download carousel as .txt file
+                      const formattedText = slides.map((slide, index) => 
+                        `Slide ${index + 1}\n\n${slide}\n\n${"=".repeat(60)}\n\n`
+                      ).join('')
+                      const blob = new Blob([formattedText], { type: 'text/plain' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `carousel-${Date.now()}.txt`
+                      document.body.appendChild(a)
+                      a.click()
+                      document.body.removeChild(a)
+                      URL.revokeObjectURL(url)
+                      
+                      // Open carousel designer in new tab
+                      window.open('/carousel-designer', '_blank')
+                    }}
+                    className="rounded-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 flex-1"
+                  >
+                    <Download className="size-4" />
+                    <span className="text-xs font-medium">Download & Open Designer</span>
+                  </Button>
                 </>
               )}
             </div>
@@ -1985,17 +2012,18 @@ export default function ContentPostingPlatform() {
       case "carousel":
         return (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <PostContextForm
+              context={context}
+              onContextChange={setContext}
+              selectedPersona={selectedPersona}
+              onPersonaChange={setSelectedPersona}
+              onShowPersonaDialog={() => setShowPersonaDialog(true)}
+              selectedBrandContext={selectedContext}
+              onBrandContextChange={setSelectedContext}
+              onShowContextDialog={() => setShowContextDialog(true)}
+            />
             <div className="space-y-6">
-              <PostContextForm
-                context={context}
-                onContextChange={setContext}
-                selectedPersona={selectedPersona}
-                onPersonaChange={setSelectedPersona}
-                onShowPersonaDialog={() => setShowPersonaDialog(true)}
-                selectedBrandContext={selectedContext}
-                onBrandContextChange={setSelectedContext}
-                onShowContextDialog={() => setShowContextDialog(true)}
-              />
+              <LinkedInCarouselConfig carouselSettings={carouselSettings} onCarouselSettingsChange={setCarouselSettings} />
               <SourceContentInput 
                 content={content} 
                 onContentChange={setContent}
@@ -2008,7 +2036,6 @@ export default function ContentPostingPlatform() {
                 copiedCommentStates={copiedStates}
               />
             </div>
-            <LinkedInCarouselConfig carouselSettings={carouselSettings} onCarouselSettingsChange={setCarouselSettings} />
           </div>
         )
       case "diagram":

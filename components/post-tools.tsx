@@ -37,6 +37,7 @@ import { Badge } from "@/components/ui/badge"
 import { APIKeyDialog } from "@/components/api-key-dialog"
 import { apiKeyManager } from "@/lib/api-key-manager"
 import { useToast } from "@/hooks/use-toast"
+import { getPersonaTrainingDataWithType } from "@/lib/persona-training"
 
 interface PostToolsProps {
   post?: string
@@ -365,19 +366,37 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
     setCommentError("")
 
     try {
+      // Get persona training data if a persona is selected
+      let clientPersonaTrainingData: any[] = []
+      if (selectedPersona && selectedPersona !== "general") {
+        const persona = getPersonaTrainingDataWithType(selectedPersona)
+        if (persona) {
+          clientPersonaTrainingData = [{
+            name: persona.name,
+            type: persona.contentType || "mixed",
+            writingSamples: persona.rawContent?.split(/---+|===+/) || [],
+            styleNotes: persona.instructions || "",
+            commentInstructions: persona.commentInstructions || "",
+          }]
+        }
+      }
+
+      // Get API key for the selected comment provider
+      const apiKey = apiKeyManager.getAPIKey(apiKeyManager.getConfigs(selectedCommentProvider)[0]?.id || "")
+
       const response = await fetch("/api/comment-generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          provider: selectedCommentProvider,
-          content: postContentToUse,
-          title: postTitle,
-          link: postLink,
-          persona: selectedPersona,
-          count: parseInt(actualCount),
-          platform,
+          prompt: `Generate ${parseInt(actualCount)} engaging comment${parseInt(actualCount) > 1 ? 's' : ''} for this ${platform || "LinkedIn"} post:\n\n${postContentToUse}`,
+          selectedProvider: selectedCommentProvider,
+          selectedModel: undefined, // Use default model
+          apiKey: apiKey || undefined,
+          clientPersonaTrainingData,
+          clientContextData: [],
+          platform: platform?.toLowerCase() || "linkedin",
         }),
       })
 
@@ -387,14 +406,14 @@ export function PostTools({ post = "", postTitle = "", postLink = "", isLoading 
         throw new Error(result.error || "Comment generation failed")
       }
 
-      if (result.success) {
+      if (result.comments && result.comments.length > 0) {
         setGeneratedComments(result.comments)
         toast({
           title: "Comments Generated Successfully",
           description: `Generated ${result.comments.length} comments`,
         })
       } else {
-        throw new Error(result.error || "Comment generation failed")
+        throw new Error(result.error || "No comments generated")
       }
     } catch (error) {
       console.error("Comment generation error:", error)
