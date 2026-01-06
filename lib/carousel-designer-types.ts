@@ -541,6 +541,8 @@ export interface CarouselTemplate {
   tags: string[]
   createdAt: number
   updatedAt: number
+  // Canvas margins - prevent objects from going beyond these boundaries
+  canvasMargins?: Spacing
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────

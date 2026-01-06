@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useRef, useCallback, useEffect } from "react"
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import { HelpDialog } from "@/components/help-dialog"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import { InlineCustomPaletteCreator, CustomPaletteCreatorTrigger } from "@/components/custom-palette-creator"
@@ -108,11 +108,21 @@ const STROKE_CAP_OPTIONS: { id: StrokeCap; name: string; icon: string }[] = [
 // Stroke arrow options for UI
 const STROKE_ARROW_OPTIONS: { id: StrokeArrow; name: string; icon: string }[] = [
   { id: "none", name: "None", icon: "—" },
-  { id: "line-arrow", name: "Line arrow", icon: "←" },
-  { id: "triangle-arrow", name: "Triangle arrow", icon: "◀" },
-  { id: "reversed-triangle", name: "Reversed triangle", icon: "▶" },
-  { id: "circle-arrow", name: "Circle arrow", icon: "●" },
-  { id: "diamond-arrow", name: "Diamond arrow", icon: "◆" },
+  { id: "line-arrow", name: "Line arrow", icon: "‹" },
+  { id: "triangle-arrow", name: "Triangle arrow", icon: "◁" },
+  { id: "reversed-triangle", name: "Reversed triangle", icon: "▷" },
+  { id: "circle-arrow", name: "Circle arrow", icon: "○" },
+  { id: "diamond-arrow", name: "Diamond arrow", icon: "◇" },
+]
+
+// Stroke arrow options for end (reversed icons)
+const STROKE_ARROW_END_OPTIONS: { id: StrokeArrow; name: string; icon: string }[] = [
+  { id: "none", name: "None", icon: "—" },
+  { id: "line-arrow", name: "Line arrow", icon: "›" },
+  { id: "triangle-arrow", name: "Triangle arrow", icon: "▷" },
+  { id: "reversed-triangle", name: "Reversed triangle", icon: "◁" },
+  { id: "circle-arrow", name: "Circle arrow", icon: "○" },
+  { id: "diamond-arrow", name: "Diamond arrow", icon: "◇" },
 ]
 
 // Text transform options for UI
@@ -134,7 +144,6 @@ const SHAPE_TYPES: { id: ShapeType; name: string; icon: typeof Square }[] = [
   { id: "hexagon", name: "Hexagon", icon: Hexagon },
   { id: "star", name: "Star", icon: Star },
   { id: "line", name: "Line", icon: LineIcon },
-  { id: "arrow", name: "Arrow", icon: ArrowRight },
 ]
 
 // Sticker categories for professional templates
@@ -248,8 +257,11 @@ import {
   createBlankTemplate,
   duplicateTemplate,
 } from "@/lib/carousel-templates"
-import html2canvas from "html2canvas"
-import jsPDF from "jspdf"
+import { 
+  downloadCarouselSlides, 
+  parsePageRange, 
+  ExportFormat 
+} from "@/lib/carousel-export"
 
 // ─────────────────────────────────────────────────────────────────────────────────
 // Helper: Scale template elements for different dimensions
@@ -703,42 +715,43 @@ function SpacingControl({ label, value, onChange, maxValue = 100 }: SpacingContr
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="text-xs font-medium">{label}</Label>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant={linked ? "default" : "outline"}
-              size="icon"
-              className="h-6 w-6"
-              onClick={() => {
-                setLinked(!linked)
-                if (!linked) {
-                  // When linking, set all to the top value
-                  updateAll(value.top)
-                }
-              }}
-            >
-              <Link className="h-3 w-3" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            <p>{linked ? "Unlink values" : "Link all values"}</p>
-          </TooltipContent>
-        </Tooltip>
+        {label && <Label className="text-xs font-medium">{label}</Label>}
+        <div className={`flex items-center gap-2 ${!label ? 'w-full' : ''}`}>
+          {linked && (
+            <AutoSelectInput
+              type="number"
+              min={0}
+              max={maxValue}
+              value={value.top}
+              onChange={(e) => updateAll(Number(e.target.value))}
+              className="h-7 w-16 text-xs"
+            />
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={linked ? "default" : "outline"}
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => {
+                  setLinked(!linked)
+                  if (!linked) {
+                    // When linking, set all to the top value
+                    updateAll(value.top)
+                  }
+                }}
+              >
+                <Link className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p>{linked ? "Unlink values" : "Link all values"}</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
       
-      {linked ? (
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">All sides ({value.top}px)</Label>
-          <Slider
-            value={[value.top]}
-            onValueChange={([v]) => updateAll(v)}
-            min={0}
-            max={maxValue}
-            step={1}
-          />
-        </div>
-      ) : (
+      {!linked && (
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground flex items-center gap-1">
@@ -795,6 +808,1538 @@ function SpacingControl({ label, value, onChange, maxValue = 100 }: SpacingContr
         </div>
       )}
     </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Draggable Popup Component - Reusable floating window
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface DraggablePopupProps {
+  title: string
+  isOpen: boolean
+  onClose: () => void
+  initialPosition?: { x: number; y: number }
+  width?: number
+  children: React.ReactNode
+}
+
+function DraggablePopup({ title, isOpen, onClose, initialPosition = { x: 100, y: 100 }, width = 280, children }: DraggablePopupProps) {
+  const [isDragging, setIsDragging] = useState(false)
+  const [pos, setPos] = useState(initialPosition)
+  const dragRef = useRef<{ startX: number; startY: number; initialX: number; initialY: number } | null>(null)
+
+  useEffect(() => { 
+    if (isOpen) setPos(initialPosition) 
+  }, [isOpen])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+    dragRef.current = { startX: e.clientX, startY: e.clientY, initialX: pos.x, initialY: pos.y }
+  }
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !dragRef.current) return
+      const newX = dragRef.current.initialX + e.clientX - dragRef.current.startX
+      const newY = dragRef.current.initialY + e.clientY - dragRef.current.startY
+      // Keep within viewport bounds
+      setPos({ 
+        x: Math.max(0, Math.min(window.innerWidth - width, newX)),
+        y: Math.max(0, Math.min(window.innerHeight - 100, newY))
+      })
+    }
+    const handleMouseUp = () => { 
+      setIsDragging(false)
+      dragRef.current = null 
+    }
+    if (isDragging) { 
+      window.addEventListener('mousemove', handleMouseMove)
+      window.addEventListener('mouseup', handleMouseUp) 
+    }
+    return () => { 
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', handleMouseUp) 
+    }
+  }, [isDragging, width])
+
+  if (!isOpen) return null
+
+  return (
+    <div 
+      className="fixed z-[9999] bg-popover border rounded-lg shadow-xl overflow-visible" 
+      style={{ left: pos.x, top: pos.y, width }}
+    >
+      <div 
+        className={cn(
+          "flex items-center justify-between px-3 py-2 bg-muted/50 border-b select-none", 
+          isDragging ? "cursor-grabbing" : "cursor-grab"
+        )} 
+        onMouseDown={handleMouseDown}
+      >
+        <div className="flex items-center gap-2">
+          <Grip className="h-3 w-3 text-muted-foreground" />
+          <span className="text-[11px] font-medium">{title}</span>
+        </div>
+        <Button variant="ghost" size="icon" className="h-5 w-5 hover:bg-muted" onClick={onClose}>
+          <X className="h-3 w-3" />
+        </Button>
+      </div>
+      <div className="p-3 overflow-visible">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Fill Color Popup - Solid, Gradient, and Image tabs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface FillColorPopupProps {
+  isOpen: boolean
+  onClose: () => void
+  fill: string
+  gradient?: { enabled: boolean; from: string; to: string; direction: GradientDirection }
+  backgroundImage?: string
+  onApply: (updates: { fill?: string; gradient?: { enabled: boolean; from: string; to: string; direction: GradientDirection }; backgroundImage?: string | undefined }) => void
+  position?: { x: number; y: number }
+}
+
+function FillColorPopup({ isOpen, onClose, fill, gradient, backgroundImage, onApply, position = { x: 100, y: 100 } }: FillColorPopupProps) {
+  const [activeTab, setActiveTab] = useState<"solid" | "gradient" | "image">(
+    backgroundImage ? "image" : gradient?.enabled ? "gradient" : "solid"
+  )
+  const [solidOpacity, setSolidOpacity] = useState(1)
+  const [gradientFromOpacity, setGradientFromOpacity] = useState(1)
+  const [gradientToOpacity, setGradientToOpacity] = useState(1)
+  
+  const presetColors = [
+    "#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00",
+    "#FF00FF", "#00FFFF", "#FF6B35", "#0A66C2", "#7B2CBF", "#2D6A4F",
+  ]
+  
+  // Convert hex to rgba string
+  const applyOpacity = (color: string, alpha: number): string => {
+    if (alpha >= 1) return getHex(color)
+    const hex = getHex(color)
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`
+  }
+  
+  // Get hex from any color string
+  const getHex = (color: string): string => {
+    if (!color) return '#000000'
+    if (color.startsWith('#')) {
+      if (color.length === 7) return color
+      if (color.length === 4) {
+        const r = color[1], g = color[2], b = color[3]
+        return `#${r}${r}${g}${g}${b}${b}`
+      }
+      if (color.length === 9) return color.slice(0, 7)
+      if (color.length === 5) {
+        const r = color[1], g = color[2], b = color[3]
+        return `#${r}${r}${g}${g}${b}${b}`
+      }
+      return color.length >= 7 ? color.slice(0, 7) : '#000000'
+    }
+    if (color.startsWith('rgba') || color.startsWith('rgb')) {
+      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+      if (match) {
+        const r = parseInt(match[1]).toString(16).padStart(2, '0')
+        const g = parseInt(match[2]).toString(16).padStart(2, '0')
+        const b = parseInt(match[3]).toString(16).padStart(2, '0')
+        return `#${r}${g}${b}`
+      }
+    }
+    return '#000000'
+  }
+  
+  // Get opacity from any color string
+  const getOpacity = (color: string): number => {
+    if (!color) return 1
+    if (color.startsWith('rgba')) {
+      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
+      if (match && match[4]) return parseFloat(match[4])
+    }
+    return 1
+  }
+  
+  // Initialize opacities from props
+  useEffect(() => {
+    setSolidOpacity(getOpacity(fill))
+    if (gradient) {
+      setGradientFromOpacity(getOpacity(gradient.from))
+      setGradientToOpacity(getOpacity(gradient.to))
+    }
+  }, [fill, gradient?.from, gradient?.to])
+  
+  // Handle tab change - apply current values
+  const handleTabChange = (newTab: "solid" | "gradient" | "image") => {
+    setActiveTab(newTab)
+    if (newTab === "solid") {
+      // Disable gradient, keep solid color
+      onApply({
+        gradient: { 
+          enabled: false, 
+          from: gradient?.from || getHex(fill), 
+          to: gradient?.to || "#ffffff",
+          direction: gradient?.direction || "to-br"
+        },
+        backgroundImage: undefined
+      })
+    } else if (newTab === "gradient") {
+      // Enable gradient
+      onApply({
+        gradient: { 
+          enabled: true, 
+          from: gradient?.from || getHex(fill), 
+          to: gradient?.to || "#ffffff",
+          direction: gradient?.direction || "to-br"
+        },
+        backgroundImage: undefined
+      })
+    }
+  }
+
+  return (
+    <DraggablePopup title="Fill Color" isOpen={isOpen} onClose={onClose} initialPosition={position} width={280}>
+      <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as "solid" | "gradient" | "image")} className="w-full">
+        <TabsList className="w-full h-7 p-0.5">
+          <TabsTrigger value="solid" className="flex-1 text-[10px] h-6">Solid</TabsTrigger>
+          <TabsTrigger value="gradient" className="flex-1 text-[10px] h-6">Gradient</TabsTrigger>
+          <TabsTrigger value="image" className="flex-1 text-[10px] h-6">Image</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="solid" className="mt-2 space-y-2">
+          <div className="grid grid-cols-6 gap-1">
+            {presetColors.map((presetColor) => (
+              <button
+                key={presetColor}
+                className={cn(
+                  "h-6 w-6 rounded border transition-transform hover:scale-110",
+                  getHex(fill) === presetColor && "ring-2 ring-primary ring-offset-1"
+                )}
+                style={{ backgroundColor: presetColor }}
+                onClick={() => {
+                  const newColor = applyOpacity(presetColor, solidOpacity)
+                  onApply({
+                    fill: newColor,
+                    gradient: { enabled: false, from: gradient?.from || presetColor, to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" },
+                    backgroundImage: undefined
+                  })
+                }}
+              />
+            ))}
+          </div>
+          <Separator className="my-1" />
+          <div className="flex gap-2">
+            <Input
+              type="color"
+              value={getHex(fill)}
+              onChange={(e) => {
+                const newColor = applyOpacity(e.target.value, solidOpacity)
+                onApply({
+                  fill: newColor,
+                  gradient: { enabled: false, from: gradient?.from || e.target.value, to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" },
+                  backgroundImage: undefined
+                })
+              }}
+              className="w-10 h-8 p-0.5 border cursor-pointer"
+            />
+            <AutoSelectInput
+              value={getHex(fill)}
+              onChange={(e) => {
+                if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                  const newColor = applyOpacity(e.target.value, solidOpacity)
+                  onApply({
+                    fill: newColor,
+                    gradient: { enabled: false, from: gradient?.from || e.target.value, to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" },
+                    backgroundImage: undefined
+                  })
+                }
+              }}
+              placeholder="#000000"
+              className="flex-1 h-8 text-xs"
+            />
+          </div>
+          {/* Opacity Slider */}
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Opacity ({Math.round(solidOpacity * 100)}%)</Label>
+            <Slider
+              value={[solidOpacity * 100]}
+              onValueChange={([v]) => {
+                const newOpacity = v / 100
+                setSolidOpacity(newOpacity)
+                const newColor = applyOpacity(getHex(fill), newOpacity)
+                onApply({ fill: newColor })
+              }}
+              min={0}
+              max={100}
+              step={1}
+            />
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="gradient" className="mt-2 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">From</Label>
+              <div className="flex gap-1">
+                <Input
+                  type="color"
+                  value={getHex(gradient?.from || fill)}
+                  onChange={(e) => {
+                    const newFrom = applyOpacity(e.target.value, gradientFromOpacity)
+                    onApply({
+                      gradient: { 
+                        enabled: true, 
+                        from: newFrom, 
+                        to: gradient?.to || "#ffffff",
+                        direction: gradient?.direction || "to-br"
+                      },
+                      backgroundImage: undefined
+                    })
+                  }}
+                  className="w-8 h-7 p-0.5 border cursor-pointer"
+                />
+                <AutoSelectInput
+                  value={getHex(gradient?.from || fill)}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      const newFrom = applyOpacity(e.target.value, gradientFromOpacity)
+                      onApply({
+                        gradient: { 
+                          enabled: true, 
+                          from: newFrom, 
+                          to: gradient?.to || "#ffffff",
+                          direction: gradient?.direction || "to-br"
+                        }
+                      })
+                    }
+                  }}
+                  className="flex-1 h-7 text-[10px]"
+                />
+              </div>
+              <Slider
+                value={[gradientFromOpacity * 100]}
+                onValueChange={([v]) => {
+                  const newOpacity = v / 100
+                  setGradientFromOpacity(newOpacity)
+                  const newFrom = applyOpacity(getHex(gradient?.from || fill), newOpacity)
+                  onApply({
+                    gradient: { 
+                      enabled: true, 
+                      from: newFrom, 
+                      to: gradient?.to || "#ffffff",
+                      direction: gradient?.direction || "to-br"
+                    }
+                  })
+                }}
+                min={0}
+                max={100}
+                step={1}
+                className="mt-1"
+              />
+              <span className="text-[9px] text-muted-foreground">{Math.round(gradientFromOpacity * 100)}%</span>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">To</Label>
+              <div className="flex gap-1">
+                <Input
+                  type="color"
+                  value={getHex(gradient?.to || "#ffffff")}
+                  onChange={(e) => {
+                    const newTo = applyOpacity(e.target.value, gradientToOpacity)
+                    onApply({
+                      gradient: { 
+                        enabled: true, 
+                        from: gradient?.from || getHex(fill), 
+                        to: newTo,
+                        direction: gradient?.direction || "to-br"
+                      },
+                      backgroundImage: undefined
+                    })
+                  }}
+                  className="w-8 h-7 p-0.5 border cursor-pointer"
+                />
+                <AutoSelectInput
+                  value={getHex(gradient?.to || "#ffffff")}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      const newTo = applyOpacity(e.target.value, gradientToOpacity)
+                      onApply({
+                        gradient: { 
+                          enabled: true, 
+                          from: gradient?.from || getHex(fill), 
+                          to: newTo,
+                          direction: gradient?.direction || "to-br"
+                        }
+                      })
+                    }
+                  }}
+                  className="flex-1 h-7 text-[10px]"
+                />
+              </div>
+              <Slider
+                value={[gradientToOpacity * 100]}
+                onValueChange={([v]) => {
+                  const newOpacity = v / 100
+                  setGradientToOpacity(newOpacity)
+                  const newTo = applyOpacity(getHex(gradient?.to || "#ffffff"), newOpacity)
+                  onApply({
+                    gradient: { 
+                      enabled: true, 
+                      from: gradient?.from || getHex(fill), 
+                      to: newTo,
+                      direction: gradient?.direction || "to-br"
+                    }
+                  })
+                }}
+                min={0}
+                max={100}
+                step={1}
+                className="mt-1"
+              />
+              <span className="text-[9px] text-muted-foreground">{Math.round(gradientToOpacity * 100)}%</span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={gradient?.direction || "to-br"}
+              onValueChange={(v) => {
+                onApply({
+                  gradient: { 
+                    enabled: true, 
+                    from: gradient?.from || getHex(fill), 
+                    to: gradient?.to || "#ffffff",
+                    direction: v as GradientDirection
+                  },
+                  backgroundImage: undefined
+                })
+              }}
+            >
+              <SelectTrigger className="h-7 text-[10px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-[10000]">
+                <SelectItem value="to-t" className="text-xs">↑ Top</SelectItem>
+                <SelectItem value="to-b" className="text-xs">↓ Bottom</SelectItem>
+                <SelectItem value="to-l" className="text-xs">← Left</SelectItem>
+                <SelectItem value="to-r" className="text-xs">→ Right</SelectItem>
+                <SelectItem value="to-tl" className="text-xs">↖ Top Left</SelectItem>
+                <SelectItem value="to-tr" className="text-xs">↗ Top Right</SelectItem>
+                <SelectItem value="to-bl" className="text-xs">↙ Bottom Left</SelectItem>
+                <SelectItem value="to-br" className="text-xs">↘ Bottom Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Preview */}
+          <div 
+            className="h-8 rounded border"
+            style={{ 
+              background: `linear-gradient(${getGradientAngle(gradient?.direction || "to-br")}, ${gradient?.from || getHex(fill)}, ${gradient?.to || "#ffffff"})`
+            }}
+          />
+        </TabsContent>
+        
+        <TabsContent value="image" className="mt-2 space-y-2">
+          {/* Image Preview at top */}
+          {backgroundImage && (
+            <div 
+              className="h-20 rounded border bg-cover bg-center"
+              style={{ backgroundImage: `url(${backgroundImage})` }}
+            />
+          )}
+          <div className="space-y-2">
+            <Label className="text-[10px] text-muted-foreground">Image URL</Label>
+            <AutoSelectInput
+              type="text"
+              placeholder="https://example.com/image.jpg"
+              value={backgroundImage || ''}
+              onChange={(e) => {
+                onApply({
+                  backgroundImage: e.target.value || undefined,
+                  gradient: { enabled: false, from: gradient?.from || getHex(fill), to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" }
+                })
+              }}
+              className="h-8 text-xs"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-[10px] text-muted-foreground">Upload from device</Label>
+            <Input
+              type="file"
+              accept="image/*"
+              className="h-8 text-[10px] cursor-pointer text-muted-foreground"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  const reader = new FileReader()
+                  reader.onload = (event) => {
+                    onApply({
+                      backgroundImage: event.target?.result as string,
+                      gradient: { enabled: false, from: gradient?.from || getHex(fill), to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" }
+                    })
+                  }
+                  reader.readAsDataURL(file)
+                }
+              }}
+            />
+          </div>
+          {backgroundImage && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full h-7 text-[10px]"
+              onClick={() => onApply({ backgroundImage: undefined })}
+            >
+              Remove Image
+            </Button>
+          )}
+        </TabsContent>
+      </Tabs>
+    </DraggablePopup>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Stroke Color Popup - Solid, Gradient, and Options tabs
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface StrokeColorPopupProps {
+  isOpen: boolean
+  onClose: () => void
+  stroke: string
+  strokeWidth: number
+  strokeGradient?: { enabled: boolean; from: string; to: string; direction: GradientDirection }
+  strokeCap?: StrokeCap
+  strokeDasharray?: string
+  strokeArrowStart?: StrokeArrow
+  strokeArrowEnd?: StrokeArrow
+  isLine?: boolean
+  onApply: (updates: {
+    stroke?: string
+    strokeWidth?: number
+    strokeGradient?: { enabled: boolean; from: string; to: string; direction: GradientDirection }
+    strokeCap?: StrokeCap
+    strokeDasharray?: string | undefined
+    strokeArrowStart?: StrokeArrow
+    strokeArrowEnd?: StrokeArrow
+  }) => void
+  position?: { x: number; y: number }
+}
+
+function StrokeColorPopup({ 
+  isOpen, onClose, stroke, strokeWidth, strokeGradient, strokeCap, strokeDasharray, 
+  strokeArrowStart, strokeArrowEnd, isLine,
+  onApply,
+  position = { x: 100, y: 100 } 
+}: StrokeColorPopupProps) {
+  const [activeTab, setActiveTab] = useState<"solid" | "gradient" | "options">(
+    strokeGradient?.enabled ? "gradient" : "solid"
+  )
+  const [solidOpacity, setSolidOpacity] = useState(1)
+  const [gradientFromOpacity, setGradientFromOpacity] = useState(1)
+  const [gradientToOpacity, setGradientToOpacity] = useState(1)
+  
+  const presetColors = [
+    "#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00",
+    "#FF00FF", "#00FFFF", "#FF6B35", "#0A66C2", "#7B2CBF", "#2D6A4F",
+  ]
+  
+  // Convert hex to rgba string
+  const applyOpacity = (color: string, alpha: number): string => {
+    if (alpha >= 1) return getHex(color)
+    const hex = getHex(color)
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`
+  }
+  
+  // Get hex from any color string
+  const getHex = (color: string): string => {
+    if (!color) return '#000000'
+    if (color.startsWith('#')) {
+      if (color.length === 7) return color
+      if (color.length === 4) {
+        const r = color[1], g = color[2], b = color[3]
+        return `#${r}${r}${g}${g}${b}${b}`
+      }
+      if (color.length === 9) return color.slice(0, 7)
+      if (color.length === 5) {
+        const r = color[1], g = color[2], b = color[3]
+        return `#${r}${r}${g}${g}${b}${b}`
+      }
+      return color.length >= 7 ? color.slice(0, 7) : '#000000'
+    }
+    if (color.startsWith('rgba') || color.startsWith('rgb')) {
+      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+      if (match) {
+        const r = parseInt(match[1]).toString(16).padStart(2, '0')
+        const g = parseInt(match[2]).toString(16).padStart(2, '0')
+        const b = parseInt(match[3]).toString(16).padStart(2, '0')
+        return `#${r}${g}${b}`
+      }
+    }
+    return '#000000'
+  }
+  
+  // Get opacity from any color string
+  const getOpacity = (color: string): number => {
+    if (!color) return 1
+    if (color.startsWith('rgba')) {
+      const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
+      if (match && match[4]) return parseFloat(match[4])
+    }
+    return 1
+  }
+  
+  // Initialize opacities from props
+  useEffect(() => {
+    setSolidOpacity(getOpacity(stroke))
+    if (strokeGradient) {
+      setGradientFromOpacity(getOpacity(strokeGradient.from))
+      setGradientToOpacity(getOpacity(strokeGradient.to))
+    }
+  }, [stroke, strokeGradient?.from, strokeGradient?.to])
+  
+  // Auto-set stroke width to 5 if color is applied and width is 0
+  const handleColorChange = (newColor: string) => {
+    // Single batch update with solid color, auto width if needed, and gradient disabled
+    onApply({
+      stroke: newColor,
+      strokeWidth: strokeWidth === 0 ? 5 : strokeWidth,
+      strokeGradient: { 
+        enabled: false, 
+        from: strokeGradient?.from || getHex(newColor), 
+        to: strokeGradient?.to || "#ffffff",
+        direction: strokeGradient?.direction || "to-br"
+      }
+    })
+  }
+  
+  // Handle tab change - apply current values
+  const handleTabChange = (newTab: "solid" | "gradient" | "options") => {
+    setActiveTab(newTab)
+    if (newTab === "solid") {
+      // Disable gradient in single update
+      onApply({
+        strokeGradient: { 
+          enabled: false, 
+          from: strokeGradient?.from || getHex(stroke), 
+          to: strokeGradient?.to || "#ffffff",
+          direction: strokeGradient?.direction || "to-br"
+        }
+      })
+    } else if (newTab === "gradient" && !isLine) {
+      // Enable gradient with auto width if needed in single update (not for lines)
+      onApply({
+        strokeWidth: strokeWidth === 0 ? 5 : strokeWidth,
+        strokeGradient: { 
+          enabled: true, 
+          from: strokeGradient?.from || getHex(stroke), 
+          to: strokeGradient?.to || "#ffffff",
+          direction: strokeGradient?.direction || "to-br"
+        }
+      })
+    }
+  }
+
+  return (
+    <DraggablePopup title="Stroke" isOpen={isOpen} onClose={onClose} initialPosition={position} width={280}>
+      <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as "solid" | "gradient" | "options")} className="w-full">
+        <TabsList className={cn("w-full h-7 p-0.5", isLine ? "grid-cols-2" : "")}>
+          <TabsTrigger value="solid" className="flex-1 text-[10px] h-6">Solid</TabsTrigger>
+          {!isLine && <TabsTrigger value="gradient" className="flex-1 text-[10px] h-6">Gradient</TabsTrigger>}
+          <TabsTrigger value="options" className="flex-1 text-[10px] h-6">Options</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="solid" className="mt-2 space-y-2">
+          <div className="grid grid-cols-6 gap-1">
+            {presetColors.map((presetColor) => (
+              <button
+                key={presetColor}
+                className={cn(
+                  "h-6 w-6 rounded border transition-transform hover:scale-110",
+                  getHex(stroke) === presetColor && "ring-2 ring-primary ring-offset-1"
+                )}
+                style={{ backgroundColor: presetColor }}
+                onClick={() => handleColorChange(applyOpacity(presetColor, solidOpacity))}
+              />
+            ))}
+          </div>
+          <Separator className="my-1" />
+          <div className="flex gap-2">
+            <Input
+              type="color"
+              value={getHex(stroke)}
+              onChange={(e) => handleColorChange(applyOpacity(e.target.value, solidOpacity))}
+              className="w-10 h-8 p-0.5 border cursor-pointer"
+            />
+            <AutoSelectInput
+              value={getHex(stroke)}
+              onChange={(e) => {
+                if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                  handleColorChange(applyOpacity(e.target.value, solidOpacity))
+                }
+              }}
+              placeholder="#000000"
+              className="flex-1 h-8 text-xs"
+            />
+          </div>
+          {/* Opacity Slider */}
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Opacity ({Math.round(solidOpacity * 100)}%)</Label>
+            <Slider
+              value={[solidOpacity * 100]}
+              onValueChange={([v]) => {
+                const newOpacity = v / 100
+                setSolidOpacity(newOpacity)
+                const newColor = applyOpacity(getHex(stroke), newOpacity)
+                onApply({ stroke: newColor })
+              }}
+              min={0}
+              max={100}
+              step={1}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Width ({strokeWidth}px)</Label>
+            <Slider
+              value={[strokeWidth]}
+              onValueChange={([v]) => onApply({ strokeWidth: v })}
+              min={0}
+              max={20}
+              step={1}
+            />
+          </div>
+        </TabsContent>
+        
+        {!isLine && <TabsContent value="gradient" className="mt-2 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">From</Label>
+              <div className="flex gap-1">
+                <Input
+                  type="color"
+                  value={getHex(strokeGradient?.from || stroke)}
+                  onChange={(e) => {
+                    const newFrom = applyOpacity(e.target.value, gradientFromOpacity)
+                    onApply({
+                      strokeWidth: strokeWidth === 0 ? 5 : strokeWidth,
+                      strokeGradient: { 
+                        enabled: true, 
+                        from: newFrom, 
+                        to: strokeGradient?.to || "#ffffff",
+                        direction: strokeGradient?.direction || "to-r"
+                      }
+                    })
+                  }}
+                  className="w-8 h-7 p-0.5 border cursor-pointer"
+                />
+                <AutoSelectInput
+                  value={getHex(strokeGradient?.from || stroke)}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      const newFrom = applyOpacity(e.target.value, gradientFromOpacity)
+                      onApply({
+                        strokeGradient: { 
+                          enabled: true, 
+                          from: newFrom, 
+                          to: strokeGradient?.to || "#ffffff",
+                          direction: strokeGradient?.direction || "to-r"
+                        }
+                      })
+                    }
+                  }}
+                  className="flex-1 h-7 text-[10px]"
+                />
+              </div>
+              <Slider
+                value={[gradientFromOpacity * 100]}
+                onValueChange={([v]) => {
+                  const newOpacity = v / 100
+                  setGradientFromOpacity(newOpacity)
+                  const newFrom = applyOpacity(getHex(strokeGradient?.from || stroke), newOpacity)
+                  onApply({
+                    strokeGradient: { 
+                      enabled: true, 
+                      from: newFrom, 
+                      to: strokeGradient?.to || "#ffffff",
+                      direction: strokeGradient?.direction || "to-r"
+                    }
+                  })
+                }}
+                min={0}
+                max={100}
+                step={1}
+                className="mt-1"
+              />
+              <span className="text-[9px] text-muted-foreground">{Math.round(gradientFromOpacity * 100)}%</span>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">To</Label>
+              <div className="flex gap-1">
+                <Input
+                  type="color"
+                  value={getHex(strokeGradient?.to || "#ffffff")}
+                  onChange={(e) => {
+                    const newTo = applyOpacity(e.target.value, gradientToOpacity)
+                    onApply({
+                      strokeWidth: strokeWidth === 0 ? 5 : strokeWidth,
+                      strokeGradient: { 
+                        enabled: true, 
+                        from: strokeGradient?.from || getHex(stroke), 
+                        to: newTo,
+                        direction: strokeGradient?.direction || "to-r"
+                      }
+                    })
+                  }}
+                  className="w-8 h-7 p-0.5 border cursor-pointer"
+                />
+                <AutoSelectInput
+                  value={getHex(strokeGradient?.to || "#ffffff")}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      const newTo = applyOpacity(e.target.value, gradientToOpacity)
+                      onApply({
+                        strokeGradient: { 
+                          enabled: true, 
+                          from: strokeGradient?.from || getHex(stroke), 
+                          to: newTo,
+                          direction: strokeGradient?.direction || "to-r"
+                        }
+                      })
+                    }
+                  }}
+                  className="flex-1 h-7 text-[10px]"
+                />
+              </div>
+              <Slider
+                value={[gradientToOpacity * 100]}
+                onValueChange={([v]) => {
+                  const newOpacity = v / 100
+                  setGradientToOpacity(newOpacity)
+                  const newTo = applyOpacity(getHex(strokeGradient?.to || "#ffffff"), newOpacity)
+                  onApply({
+                    strokeGradient: { 
+                      enabled: true, 
+                      from: strokeGradient?.from || getHex(stroke), 
+                      to: newTo,
+                      direction: strokeGradient?.direction || "to-r"
+                    }
+                  })
+                }}
+                min={0}
+                max={100}
+                step={1}
+                className="mt-1"
+              />
+              <span className="text-[9px] text-muted-foreground">{Math.round(gradientToOpacity * 100)}%</span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={strokeGradient?.direction || "to-r"}
+              onValueChange={(v) => onApply({
+                strokeGradient: { 
+                  enabled: true, 
+                  from: strokeGradient?.from || getHex(stroke), 
+                  to: strokeGradient?.to || "#ffffff",
+                  direction: v as GradientDirection
+                }
+              })}
+            >
+              <SelectTrigger className="h-7 text-[10px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-[10000]">
+                <SelectItem value="to-t" className="text-xs">↑ Top</SelectItem>
+                <SelectItem value="to-b" className="text-xs">↓ Bottom</SelectItem>
+                <SelectItem value="to-l" className="text-xs">← Left</SelectItem>
+                <SelectItem value="to-r" className="text-xs">→ Right</SelectItem>
+                <SelectItem value="to-tl" className="text-xs">↖ Top Left</SelectItem>
+                <SelectItem value="to-tr" className="text-xs">↗ Top Right</SelectItem>
+                <SelectItem value="to-bl" className="text-xs">↙ Bottom Left</SelectItem>
+                <SelectItem value="to-br" className="text-xs">↘ Bottom Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Width ({strokeWidth}px)</Label>
+            <Slider
+              value={[strokeWidth]}
+              onValueChange={([v]) => onApply({ strokeWidth: v })}
+              min={0}
+              max={20}
+              step={1}
+            />
+          </div>
+          {/* Preview */}
+          <div 
+            className="h-3 rounded"
+            style={{ 
+              background: `linear-gradient(${getGradientAngle(strokeGradient?.direction || "to-r")}, ${strokeGradient?.from || getHex(stroke)}, ${strokeGradient?.to || "#ffffff"})`
+            }}
+          />
+        </TabsContent>}
+        
+        <TabsContent value="options" className="mt-2 space-y-3">
+          {/* Stroke Cap */}
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Cap Style</Label>
+            <div className="flex gap-1">
+              {STROKE_CAP_OPTIONS.map((opt) => (
+                <Tooltip key={opt.id}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={strokeCap === opt.id ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 w-7 p-0 text-xs"
+                      onClick={() => onApply({ strokeCap: opt.id })}
+                    >
+                      {opt.icon}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-[10px] z-[10001]">{opt.name}</TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+          
+          {/* Stroke Style */}
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Style</Label>
+            <div className="flex gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={!strokeDasharray || strokeDasharray === "solid" ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 flex-1 text-[10px]"
+                    onClick={() => onApply({ strokeDasharray: undefined })}
+                  >
+                    <div className="w-8 h-0.5 bg-current" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px] z-[10001]">Solid</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={strokeDasharray === "8,4" ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 flex-1 text-[10px]"
+                    onClick={() => onApply({ strokeDasharray: "8,4" })}
+                  >
+                    <div className="w-8 h-0.5 border-t-2 border-dashed border-current" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px] z-[10001]">Dashed</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={strokeDasharray === "2,2" ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 flex-1 text-[10px]"
+                    onClick={() => onApply({ strokeDasharray: "2,2" })}
+                  >
+                    <div className="w-8 h-0.5 border-t-2 border-dotted border-current" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px] z-[10001]">Dotted</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={strokeDasharray === "8,4,2,4" ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 flex-1 text-[10px]"
+                    onClick={() => onApply({ strokeDasharray: "8,4,2,4" })}
+                  >
+                    <svg width="32" height="2" viewBox="0 0 32 2">
+                      <line x1="0" y1="1" x2="32" y2="1" stroke="currentColor" strokeWidth="2" strokeDasharray="6,3,2,3" />
+                    </svg>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px] z-[10001]">Dash-Dot</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+          
+          {/* Stroke Width - Always visible in options */}
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Stroke Width ({strokeWidth}px)</Label>
+            <Slider
+              value={[strokeWidth]}
+              onValueChange={([v]) => onApply({ strokeWidth: v })}
+              min={0}
+              max={20}
+              step={1}
+            />
+          </div>
+          
+          {/* Arrow options - only for lines */}
+          {isLine && (
+            <>
+              <Separator className="my-1" />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Arrow Start</Label>
+                  <Select
+                    value={strokeArrowStart || "none"}
+                    onValueChange={(v) => onApply({ strokeArrowStart: v as StrokeArrow })}
+                  >
+                    <SelectTrigger className="h-7 text-[10px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-[10000]">
+                      {STROKE_ARROW_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.id} value={opt.id} className="text-xs">
+                          <span className="mr-1">{opt.icon}</span> {opt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] text-muted-foreground">Arrow End</Label>
+                  <Select
+                    value={strokeArrowEnd || "none"}
+                    onValueChange={(v) => onApply({ strokeArrowEnd: v as StrokeArrow })}
+                  >
+                    <SelectTrigger className="h-7 text-[10px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="z-[10000]">
+                      {STROKE_ARROW_END_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.id} value={opt.id} className="text-xs">
+                          <span className="mr-1">{opt.icon}</span> {opt.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
+    </DraggablePopup>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Text Color Popup - For text color and background fill with gradient support
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface TextColorPopupProps {
+  isOpen: boolean
+  onClose: () => void
+  color: string
+  gradient?: { enabled: boolean; from: string; to: string; direction: GradientDirection }
+  onApply: (updates: { color?: string; gradient?: { enabled: boolean; from: string; to: string; direction: GradientDirection } }) => void
+  title?: string
+  position?: { x: number; y: number }
+}
+
+function TextColorPopup({ isOpen, onClose, color, gradient, onApply, title = "Text Color", position = { x: 100, y: 100 } }: TextColorPopupProps) {
+  const [activeTab, setActiveTab] = useState<"solid" | "gradient">(gradient?.enabled ? "gradient" : "solid")
+  const [solidOpacity, setSolidOpacity] = useState(1)
+  const [gradientFromOpacity, setGradientFromOpacity] = useState(1)
+  const [gradientToOpacity, setGradientToOpacity] = useState(1)
+  
+  const presetColors = [
+    "#000000", "#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00",
+    "#FF00FF", "#00FFFF", "#FF6B35", "#0A66C2", "#7B2CBF", "#2D6A4F",
+  ]
+  
+  const applyOpacity = (col: string, alpha: number): string => {
+    if (alpha >= 1) return getHex(col)
+    const hex = getHex(col)
+    const r = parseInt(hex.slice(1, 3), 16)
+    const g = parseInt(hex.slice(3, 5), 16)
+    const b = parseInt(hex.slice(5, 7), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`
+  }
+  
+  const getHex = (col: string): string => {
+    if (!col || col === 'transparent') return '#000000'
+    if (col.startsWith('#')) {
+      if (col.length === 7) return col
+      if (col.length === 4) {
+        const r = col[1], g = col[2], b = col[3]
+        return `#${r}${r}${g}${g}${b}${b}`
+      }
+      if (col.length === 9) return col.slice(0, 7)
+      if (col.length === 5) {
+        const r = col[1], g = col[2], b = col[3]
+        return `#${r}${r}${g}${g}${b}${b}`
+      }
+      return col.length >= 7 ? col.slice(0, 7) : '#000000'
+    }
+    if (col.startsWith('rgba') || col.startsWith('rgb')) {
+      const match = col.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+      if (match) {
+        const r = parseInt(match[1]).toString(16).padStart(2, '0')
+        const g = parseInt(match[2]).toString(16).padStart(2, '0')
+        const b = parseInt(match[3]).toString(16).padStart(2, '0')
+        return `#${r}${g}${b}`
+      }
+    }
+    return '#000000'
+  }
+  
+  const getOpacity = (col: string): number => {
+    if (!col) return 1
+    if (col.startsWith('rgba')) {
+      const match = col.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
+      if (match && match[4]) return parseFloat(match[4])
+    }
+    return 1
+  }
+  
+  // Initialize opacities from props
+  useEffect(() => {
+    setSolidOpacity(getOpacity(color))
+    if (gradient) {
+      setGradientFromOpacity(getOpacity(gradient.from))
+      setGradientToOpacity(getOpacity(gradient.to))
+    }
+  }, [color, gradient?.from, gradient?.to])
+  
+  // Handle tab change - apply current values
+  const handleTabChange = (newTab: "solid" | "gradient") => {
+    setActiveTab(newTab)
+    if (newTab === "solid") {
+      onApply({
+        gradient: { 
+          enabled: false, 
+          from: gradient?.from || getHex(color), 
+          to: gradient?.to || "#ffffff",
+          direction: gradient?.direction || "to-br"
+        }
+      })
+    } else if (newTab === "gradient") {
+      onApply({
+        gradient: { 
+          enabled: true, 
+          from: gradient?.from || getHex(color), 
+          to: gradient?.to || "#ffffff",
+          direction: gradient?.direction || "to-br"
+        }
+      })
+    }
+  }
+
+  return (
+    <DraggablePopup title={title} isOpen={isOpen} onClose={onClose} initialPosition={position} width={260}>
+      <Tabs value={activeTab} onValueChange={(v) => handleTabChange(v as "solid" | "gradient")} className="w-full">
+        <TabsList className="w-full h-7 p-0.5">
+          <TabsTrigger value="solid" className="flex-1 text-[10px] h-6">Solid</TabsTrigger>
+          <TabsTrigger value="gradient" className="flex-1 text-[10px] h-6">Gradient</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="solid" className="mt-2 space-y-2">
+          <div className="grid grid-cols-6 gap-1">
+            {presetColors.map((presetColor) => (
+              <button
+                key={presetColor}
+                className={cn(
+                  "h-6 w-6 rounded border transition-transform hover:scale-110",
+                  getHex(color) === presetColor && "ring-2 ring-primary ring-offset-1"
+                )}
+                style={{ backgroundColor: presetColor }}
+                onClick={() => {
+                  const newColor = applyOpacity(presetColor, solidOpacity)
+                  onApply({
+                    color: newColor,
+                    gradient: { enabled: false, from: gradient?.from || presetColor, to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" }
+                  })
+                }}
+              />
+            ))}
+          </div>
+          <Separator className="my-1" />
+          <div className="flex gap-2">
+            <Input
+              type="color"
+              value={getHex(color)}
+              onChange={(e) => {
+                const newColor = applyOpacity(e.target.value, solidOpacity)
+                onApply({
+                  color: newColor,
+                  gradient: { enabled: false, from: gradient?.from || e.target.value, to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" }
+                })
+              }}
+              className="w-10 h-8 p-0.5 border cursor-pointer"
+            />
+            <AutoSelectInput
+              value={getHex(color)}
+              onChange={(e) => {
+                if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                  const newColor = applyOpacity(e.target.value, solidOpacity)
+                  onApply({
+                    color: newColor,
+                    gradient: { enabled: false, from: gradient?.from || e.target.value, to: gradient?.to || "#ffffff", direction: gradient?.direction || "to-br" }
+                  })
+                }
+              }}
+              placeholder="#000000"
+              className="flex-1 h-8 text-xs"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Opacity ({Math.round(solidOpacity * 100)}%)</Label>
+            <Slider
+              value={[solidOpacity * 100]}
+              onValueChange={([v]) => {
+                const newOpacity = v / 100
+                setSolidOpacity(newOpacity)
+                const newColor = applyOpacity(getHex(color), newOpacity)
+                onApply({ color: newColor })
+              }}
+              min={0}
+              max={100}
+              step={1}
+            />
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="gradient" className="mt-2 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">From</Label>
+              <div className="flex gap-1">
+                <Input
+                  type="color"
+                  value={getHex(gradient?.from || color)}
+                  onChange={(e) => {
+                    const newFrom = applyOpacity(e.target.value, gradientFromOpacity)
+                    onApply({
+                      gradient: { 
+                        enabled: true, 
+                        from: newFrom, 
+                        to: gradient?.to || "#ffffff",
+                        direction: gradient?.direction || "to-br"
+                      }
+                    })
+                  }}
+                  className="w-8 h-7 p-0.5 border cursor-pointer"
+                />
+                <AutoSelectInput
+                  value={getHex(gradient?.from || color)}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      const newFrom = applyOpacity(e.target.value, gradientFromOpacity)
+                      onApply({
+                        gradient: { 
+                          enabled: true, 
+                          from: newFrom, 
+                          to: gradient?.to || "#ffffff",
+                          direction: gradient?.direction || "to-br"
+                        }
+                      })
+                    }
+                  }}
+                  className="flex-1 h-7 text-[10px]"
+                />
+              </div>
+              <Slider
+                value={[gradientFromOpacity * 100]}
+                onValueChange={([v]) => {
+                  const newOpacity = v / 100
+                  setGradientFromOpacity(newOpacity)
+                  const newFrom = applyOpacity(getHex(gradient?.from || color), newOpacity)
+                  onApply({
+                    gradient: { 
+                      enabled: true, 
+                      from: newFrom, 
+                      to: gradient?.to || "#ffffff",
+                      direction: gradient?.direction || "to-br"
+                    }
+                  })
+                }}
+                min={0}
+                max={100}
+                step={1}
+                className="mt-1"
+              />
+              <span className="text-[9px] text-muted-foreground">{Math.round(gradientFromOpacity * 100)}%</span>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">To</Label>
+              <div className="flex gap-1">
+                <Input
+                  type="color"
+                  value={getHex(gradient?.to || "#ffffff")}
+                  onChange={(e) => {
+                    const newTo = applyOpacity(e.target.value, gradientToOpacity)
+                    onApply({
+                      gradient: { 
+                        enabled: true, 
+                        from: gradient?.from || getHex(color), 
+                        to: newTo,
+                        direction: gradient?.direction || "to-br"
+                      }
+                    })
+                  }}
+                  className="w-8 h-7 p-0.5 border cursor-pointer"
+                />
+                <AutoSelectInput
+                  value={getHex(gradient?.to || "#ffffff")}
+                  onChange={(e) => {
+                    if (/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
+                      const newTo = applyOpacity(e.target.value, gradientToOpacity)
+                      onApply({
+                        gradient: { 
+                          enabled: true, 
+                          from: gradient?.from || getHex(color), 
+                          to: newTo,
+                          direction: gradient?.direction || "to-br"
+                        }
+                      })
+                    }
+                  }}
+                  className="flex-1 h-7 text-[10px]"
+                />
+              </div>
+              <Slider
+                value={[gradientToOpacity * 100]}
+                onValueChange={([v]) => {
+                  const newOpacity = v / 100
+                  setGradientToOpacity(newOpacity)
+                  const newTo = applyOpacity(getHex(gradient?.to || "#ffffff"), newOpacity)
+                  onApply({
+                    gradient: { 
+                      enabled: true, 
+                      from: gradient?.from || getHex(color), 
+                      to: newTo,
+                      direction: gradient?.direction || "to-br"
+                    }
+                  })
+                }}
+                min={0}
+                max={100}
+                step={1}
+                className="mt-1"
+              />
+              <span className="text-[9px] text-muted-foreground">{Math.round(gradientToOpacity * 100)}%</span>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={gradient?.direction || "to-br"}
+              onValueChange={(v) => onApply({
+                gradient: { 
+                  enabled: true, 
+                  from: gradient?.from || getHex(color), 
+                  to: gradient?.to || "#ffffff",
+                  direction: v as GradientDirection
+                }
+              })}
+            >
+              <SelectTrigger className="h-7 text-[10px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="z-[10000]">
+                <SelectItem value="to-t" className="text-xs">↑ Top</SelectItem>
+                <SelectItem value="to-b" className="text-xs">↓ Bottom</SelectItem>
+                <SelectItem value="to-l" className="text-xs">← Left</SelectItem>
+                <SelectItem value="to-r" className="text-xs">→ Right</SelectItem>
+                <SelectItem value="to-tl" className="text-xs">↖ Top Left</SelectItem>
+                <SelectItem value="to-tr" className="text-xs">↗ Top Right</SelectItem>
+                <SelectItem value="to-bl" className="text-xs">↙ Bottom Left</SelectItem>
+                <SelectItem value="to-br" className="text-xs">↘ Bottom Right</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div 
+            className="h-8 rounded border"
+            style={{ 
+              background: `linear-gradient(${getGradientAngle(gradient?.direction || "to-br")}, ${gradient?.from || getHex(color)}, ${gradient?.to || "#ffffff"})`
+            }}
+          />
+        </TabsContent>
+      </Tabs>
+    </DraggablePopup>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Margin Popup - For topbar
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface MarginPopupProps {
+  isOpen: boolean
+  onClose: () => void
+  margins: Spacing
+  showMargins: boolean
+  onMarginsChange: (margins: Spacing) => void
+  onShowMarginsChange: (show: boolean) => void
+  position?: { x: number; y: number }
+}
+
+function MarginPopup({ isOpen, onClose, margins, showMargins, onMarginsChange, onShowMarginsChange, position = { x: 100, y: 100 } }: MarginPopupProps) {
+  const [linked, setLinked] = useState(
+    margins.top === margins.right && margins.right === margins.bottom && margins.bottom === margins.left
+  )
+
+  const updateAll = (value: number) => {
+    onMarginsChange({ top: value, right: value, bottom: value, left: value })
+  }
+
+  const updateSingle = (side: keyof Spacing, value: number) => {
+    onMarginsChange({ ...margins, [side]: value })
+  }
+
+  return (
+    <DraggablePopup title="Canvas Margins" isOpen={isOpen} onClose={onClose} initialPosition={position} width={240}>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] text-muted-foreground">Show Guides</Label>
+          <Switch checked={showMargins} onCheckedChange={onShowMarginsChange} className="scale-75" />
+        </div>
+        
+        <Separator />
+        
+        <div className="flex items-center gap-2">
+          {linked ? (
+            <AutoSelectInput
+              type="number"
+              min={0}
+              max={200}
+              value={margins.top}
+              onChange={(e) => updateAll(Number(e.target.value))}
+              className="h-7 flex-1 text-xs"
+              placeholder="All sides"
+            />
+          ) : (
+            <span className="text-[10px] text-muted-foreground flex-1">Individual</span>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={linked ? "default" : "outline"}
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => {
+                  setLinked(!linked)
+                  if (!linked) updateAll(margins.top)
+                }}
+              >
+                <Link className="h-3 w-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-[10px]">
+              {linked ? "Unlink" : "Link all"}
+            </TooltipContent>
+          </Tooltip>
+        </div>
+        
+        {!linked && (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-0.5">
+              <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <ChevronUp className="h-2.5 w-2.5" /> Top
+              </Label>
+              <AutoSelectInput
+                type="number"
+                min={0}
+                max={200}
+                value={margins.top}
+                onChange={(e) => updateSingle("top", Number(e.target.value))}
+                className="h-7 text-xs"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <ChevronRight className="h-2.5 w-2.5" /> Right
+              </Label>
+              <AutoSelectInput
+                type="number"
+                min={0}
+                max={200}
+                value={margins.right}
+                onChange={(e) => updateSingle("right", Number(e.target.value))}
+                className="h-7 text-xs"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <ChevronDown className="h-2.5 w-2.5" /> Bottom
+              </Label>
+              <AutoSelectInput
+                type="number"
+                min={0}
+                max={200}
+                value={margins.bottom}
+                onChange={(e) => updateSingle("bottom", Number(e.target.value))}
+                className="h-7 text-xs"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <ChevronLeft className="h-2.5 w-2.5" /> Left
+              </Label>
+              <AutoSelectInput
+                type="number"
+                min={0}
+                max={200}
+                value={margins.left}
+                onChange={(e) => updateSingle("left", Number(e.target.value))}
+                className="h-7 text-xs"
+              />
+            </div>
+          </div>
+        )}
+        
+        <div className="flex gap-1">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1 text-[10px] h-6"
+            onClick={() => {
+              updateAll(20)
+              setLinked(true)
+            }}
+          >
+            20px
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1 text-[10px] h-6"
+            onClick={() => {
+              updateAll(40)
+              setLinked(true)
+            }}
+          >
+            40px
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1 text-[10px] h-6"
+            onClick={() => {
+              updateAll(0)
+              setLinked(true)
+            }}
+          >
+            Reset
+          </Button>
+        </div>
+      </div>
+    </DraggablePopup>
   )
 }
 
@@ -1007,6 +2552,7 @@ interface LayersPanelProps {
   onSelectElement: (id: string) => void
   onUpdateElement: (elementId: string, updates: Partial<SlideElement>) => void
   onReorderElements: (fromIndex: number, toIndex: number) => void
+  onRemoveElementFromGroup?: (elementId: string) => void
 }
 
 function LayersPanel({
@@ -1014,15 +2560,63 @@ function LayersPanel({
   selectedElementId,
   selectedElementIds,
   onSelectElement,
+  onSelectGroup,
   onUpdateElement,
   onReorderElements,
-}: LayersPanelProps) {
+  onMultiSelect,
+  onRemoveElementFromGroup,
+}: LayersPanelProps & { 
+  onMultiSelect?: (id: string, addToSelection: boolean) => void
+  onSelectGroup?: (groupId: string) => void 
+}) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
+  const [draggedElement, setDraggedElement] = useState<SlideElement | null>(null)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   
   // Sort elements by zIndex (highest first for layer view)
   const sortedElements = [...elements].sort((a, b) => b.zIndex - a.zIndex)
   
-  const renderElementPreview = (element: SlideElement) => {
+  // Group elements by groupId
+  const groupedElements = useMemo(() => {
+    const groups = new Map<string, SlideElement[]>()
+    const ungrouped: SlideElement[] = []
+    
+    sortedElements.forEach(el => {
+      if (el.groupId) {
+        const group = groups.get(el.groupId) || []
+        group.push(el)
+        groups.set(el.groupId, group)
+      } else {
+        ungrouped.push(el)
+      }
+    })
+    
+    return { groups, ungrouped }
+  }, [sortedElements])
+  
+  const toggleGroupExpanded = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      return next
+    })
+  }
+  
+  const handleElementClick = (e: React.MouseEvent, elementId: string) => {
+    // Check for multi-select (Ctrl+click)
+    if ((e.ctrlKey || e.metaKey) && onMultiSelect) {
+      e.stopPropagation()
+      onMultiSelect(elementId, true)
+    } else {
+      onSelectElement(elementId)
+    }
+  }
+  
+  const renderElementPreview = (element: SlideElement, isGroupChild: boolean = false) => {
     const isSelected = element.id === selectedElementId || selectedElementIds.has(element.id)
     const isGrouped = Boolean(element.groupId)
     
@@ -1163,17 +2757,31 @@ function LayersPanel({
         className={cn(
           "flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-all hover:bg-accent",
           isSelected && "ring-2 ring-primary bg-primary/5",
-          isGrouped && "border-blue-500/50",
+          isGrouped && !isGroupChild && "border-blue-500/50",
+          isGroupChild && "py-1.5 px-2",
           !element.visible && "opacity-50"
         )}
-        onClick={() => onSelectElement(element.id)}
+        onClick={(e) => handleElementClick(e, element.id)}
         draggable
-        onDragStart={() => setDraggedIndex(sortedElements.indexOf(element))}
+        onDragStart={() => {
+          setDraggedIndex(sortedElements.indexOf(element))
+          setDraggedElement(element)
+        }}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
           e.preventDefault()
-          if (draggedIndex !== null) {
+          if (draggedIndex !== null && draggedElement) {
             const toIndex = sortedElements.indexOf(element)
+            const targetElement = element
+            
+            // Check if dragging a grouped element to an ungrouped area or different group
+            if (draggedElement.groupId && (!targetElement.groupId || targetElement.groupId !== draggedElement.groupId)) {
+              // Element is being dragged out of its group
+              if (onRemoveElementFromGroup) {
+                onRemoveElementFromGroup(draggedElement.id)
+              }
+            }
+            
             if (draggedIndex !== toIndex) {
               onReorderElements(
                 elements.indexOf(sortedElements[draggedIndex]),
@@ -1182,6 +2790,11 @@ function LayersPanel({
             }
           }
           setDraggedIndex(null)
+          setDraggedElement(null)
+        }}
+        onDragEnd={() => {
+          setDraggedIndex(null)
+          setDraggedElement(null)
         }}
       >
         {/* Drag Handle */}
@@ -1190,7 +2803,7 @@ function LayersPanel({
         </div>
         
         {/* Preview Thumbnail */}
-        <div className="w-12 h-12 bg-muted rounded border flex-shrink-0 overflow-hidden">
+        <div className={cn("w-12 h-12 bg-muted rounded border flex-shrink-0 overflow-hidden", isGroupChild && "w-8 h-8")}>
           {getPreviewContent()}
         </div>
         
@@ -1202,12 +2815,6 @@ function LayersPanel({
           <p className="text-[10px] text-muted-foreground truncate">
             {getElementLabel()}
           </p>
-          {isGrouped && (
-            <div className="flex items-center gap-1 mt-0.5">
-              <Group className="h-2.5 w-2.5 text-blue-500" />
-              <span className="text-[9px] text-blue-500">Grouped</span>
-            </div>
-          )}
         </div>
         
         {/* Quick Actions */}
@@ -1261,6 +2868,59 @@ function LayersPanel({
     )
   }
   
+  // Render a group header with collapsible children
+  const renderGroup = (groupId: string, groupElements: SlideElement[]) => {
+    const isExpanded = expandedGroups.has(groupId)
+    const allSelected = groupElements.every(el => el.id === selectedElementId || selectedElementIds.has(el.id))
+    const someSelected = groupElements.some(el => el.id === selectedElementId || selectedElementIds.has(el.id))
+    
+    // Extract group number from groupId
+    const groupNumber = groupId.match(/group-(\d+)/)?.[1] || "?"
+    
+    return (
+      <div key={groupId} className="space-y-1">
+        {/* Group Header */}
+        <div
+          className={cn(
+            "flex items-center gap-2 p-2 rounded-lg border border-blue-500/50 cursor-pointer transition-all hover:bg-accent bg-blue-500/5",
+            allSelected && "ring-2 ring-primary",
+            someSelected && !allSelected && "ring-1 ring-primary/50"
+          )}
+          onClick={(e) => {
+            // Select all group members when clicking on group header
+            if (onSelectGroup) {
+              onSelectGroup(groupId)
+            }
+          }}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 p-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleGroupExpanded(groupId)
+            }}
+          >
+            <ChevronRight className={cn("h-3 w-3 transition-transform", isExpanded && "rotate-90")} />
+          </Button>
+          <Group className="h-4 w-4 text-blue-500" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium">Group {groupNumber}</p>
+            <p className="text-[10px] text-muted-foreground">{groupElements.length} items</p>
+          </div>
+        </div>
+        
+        {/* Group Children (when expanded) */}
+        {isExpanded && (
+          <div className="ml-4 pl-2 border-l-2 border-blue-500/30 space-y-1">
+            {groupElements.map(el => renderElementPreview(el, true))}
+          </div>
+        )}
+      </div>
+    )
+  }
+  
   if (elements.length === 0) {
     return (
       <div className="p-4 text-center text-muted-foreground">
@@ -1271,9 +2931,21 @@ function LayersPanel({
     )
   }
   
+  // Render groups first, then ungrouped elements
+  const { groups, ungrouped } = groupedElements
+  
   return (
     <div className="space-y-2 p-2">
-      {sortedElements.map(renderElementPreview)}
+      {/* Hint for multi-select */}
+      <p className="text-[10px] text-muted-foreground text-center mb-2">
+        Ctrl+click to multi-select
+      </p>
+      
+      {/* Render groups */}
+      {Array.from(groups.entries()).map(([groupId, groupEls]: [string, SlideElement[]]) => renderGroup(groupId, groupEls))}
+      
+      {/* Render ungrouped elements */}
+      {ungrouped.map((el: SlideElement) => renderElementPreview(el, false))}
     </div>
   )
 }
@@ -1285,11 +2957,15 @@ interface SlideCanvasProps {
   selectedElementId: string | null
   selectedElementIds: Set<string> // Multi-selection
   onSelectElement: (id: string | null, addToSelection?: boolean) => void
-  onUpdateElement: (elementId: string, updates: Partial<SlideElement>) => void
+  onDoubleClickElement?: (id: string) => void // Double-click to select single element in group
+  onUpdateElement: (elementId: string, updates: Partial<SlideElement>, skipHistory?: boolean) => void
+  onDragEnd?: () => void // Called when drag/resize/rotate operation ends
   zoom: number
   showGrid: boolean
   showGuides?: boolean
   previewMode?: boolean
+  showMargins?: boolean
+  canvasMargins?: Spacing
 }
 
 function SlideCanvas({ 
@@ -1298,11 +2974,15 @@ function SlideCanvas({
   selectedElementId, 
   selectedElementIds,
   onSelectElement,
+  onDoubleClickElement,
   onUpdateElement,
+  onDragEnd,
   zoom, 
   showGrid,
   showGuides = true,
-  previewMode = false
+  previewMode = false,
+  showMargins = false,
+  canvasMargins = { top: 0, right: 0, bottom: 0, left: 0 }
 }: SlideCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const size = CAROUSEL_SIZES[template.size]
@@ -1367,6 +3047,7 @@ function SlideCanvas({
     startElY: number
     startFontSize?: number
     ctrlKey?: boolean // Track if Ctrl was held during resize start
+    elementType?: string // Store element type for resize logic
   }>(null)
 
   const rotatingRef = useRef<null | {
@@ -1377,8 +3058,28 @@ function SlideCanvas({
     elStartRotation: number
   }>(null)
 
+  // RAF ref for smooth movement
+  const rafRef = useRef<number | null>(null)
+  const pendingUpdateRef = useRef<{ id: string; updates: Partial<SlideElement> } | null>(null)
+
   // pointer move/up handlers attached to window so drag continues even if pointer leaves canvas
   useEffect(() => {
+    const applyUpdate = () => {
+      if (pendingUpdateRef.current) {
+        // Skip history during continuous dragging - will save on pointer up
+        onUpdateElement(pendingUpdateRef.current.id, pendingUpdateRef.current.updates, true)
+        pendingUpdateRef.current = null
+      }
+      rafRef.current = null
+    }
+
+    const scheduleUpdate = (id: string, updates: Partial<SlideElement>) => {
+      pendingUpdateRef.current = { id, updates }
+      if (!rafRef.current) {
+        rafRef.current = requestAnimationFrame(applyUpdate)
+      }
+    }
+
     const onPointerMove = (e: PointerEvent) => {
       const dr = draggingRef.current
       const rr = resizingRef.current
@@ -1408,7 +3109,7 @@ function SlideCanvas({
                 break
               }
             }
-            onUpdateElement(rot.id, { rotation: newRotation })
+            scheduleUpdate(rot.id, { rotation: newRotation })
           }
         }
         return
@@ -1417,54 +3118,92 @@ function SlideCanvas({
       if (dr) {
         const dx = (e.clientX - dr.startX) / sf
         const dy = (e.clientY - dr.startY) / sf
-        let newX = Math.max(0, Math.round(dr.elStartX + dx))
-        let newY = Math.max(0, Math.round(dr.elStartY + dy))
+        let newX = Math.round(dr.elStartX + dx)
+        let newY = Math.round(dr.elStartY + dy)
         
         // Calculate element center
         const element = slide.elements.find(el => el.id === dr.id)
-        if (element && showGuides) {
-          const centerX = newX + element.width / 2
-          const centerY = newY + element.height / 2
-          const canvasCenterX = size.width / 2
-          const canvasCenterY = size.height / 2
+        if (element) {
+          // Clamp position to canvas bounds - allow partial overflow but not complete
+          const maxX = size.width - 20 // Keep at least 20px visible
+          const maxY = size.height - 20
+          newX = Math.max(-element.width + 20, Math.min(maxX, newX))
+          newY = Math.max(-element.height + 20, Math.min(maxY, newY))
           
-          // Snap to center with 10px threshold
-          const snapThreshold = 10
-          const newGuides: typeof guides = {}
-          
-          if (Math.abs(centerX - canvasCenterX) < snapThreshold) {
-            newX = canvasCenterX - element.width / 2
-            newGuides.x = canvasCenterX
-            newGuides.centerX = true
+          if (showGuides) {
+            const centerX = newX + element.width / 2
+            const centerY = newY + element.height / 2
+            const canvasCenterX = size.width / 2
+            const canvasCenterY = size.height / 2
+            
+            // Snap to center with 10px threshold
+            const snapThreshold = 10
+            const newGuides: typeof guides = {}
+            
+            if (Math.abs(centerX - canvasCenterX) < snapThreshold) {
+              newX = canvasCenterX - element.width / 2
+              newGuides.x = canvasCenterX
+              newGuides.centerX = true
+            }
+            if (Math.abs(centerY - canvasCenterY) < snapThreshold) {
+              newY = canvasCenterY - element.height / 2
+              newGuides.y = canvasCenterY
+              newGuides.centerY = true
+            }
+            setGuides(newGuides)
           }
-          if (Math.abs(centerY - canvasCenterY) < snapThreshold) {
-            newY = canvasCenterY - element.height / 2
-            newGuides.y = canvasCenterY
-            newGuides.centerY = true
-          }
-          setGuides(newGuides)
         }
         
-        onUpdateElement(dr.id, { x: newX, y: newY })
+        scheduleUpdate(dr.id, { x: newX, y: newY })
       }
 
       if (rr) {
         const dx = (e.clientX - rr.startX) / sf
         const dy = (e.clientY - rr.startY) / sf
-        let newW = Math.max(10, Math.round(rr.startW + dx))
-        let newH = Math.max(10, Math.round(rr.startH + dy))
+        
+        // Check element type for specialized resize logic
+        const element = slide.elements.find(el => el.id === rr.id)
+        const isLineOrArrow = element && element.type === "shape" && 
+          ((element as ShapeElement).shapeType === "line" || (element as ShapeElement).shapeType === "arrow")
+        
+        let newW: number
+        let newH: number
         let newX = rr.startElX
         let newY = rr.startElY
-        // SE and NW simple behaviors
-        if (rr.handle === "nw") {
-          newW = Math.max(10, Math.round(rr.startW - dx))
-          newH = Math.max(10, Math.round(rr.startH - dy))
-          newX = Math.round(rr.startElX + dx)
-          newY = Math.round(rr.startElY + dy)
+        
+        if (isLineOrArrow) {
+          // For lines/arrows, resize differently - allow changing length and angle
+          if (rr.handle === "se") {
+            newW = Math.max(20, Math.round(rr.startW + dx))
+            newH = Math.max(2, Math.round(rr.startH + dy))
+          } else if (rr.handle === "nw") {
+            newW = Math.max(20, Math.round(rr.startW - dx))
+            newH = Math.max(2, Math.round(rr.startH - dy))
+            newX = Math.max(0, Math.round(rr.startElX + dx))
+            newY = Math.round(rr.startElY + dy)
+          } else {
+            newW = rr.startW
+            newH = rr.startH
+          }
+        } else {
+          // Normal resize logic
+          newW = Math.max(10, Math.round(rr.startW + dx))
+          newH = Math.max(10, Math.round(rr.startH + dy))
+          
+          // SE and NW simple behaviors
+          if (rr.handle === "nw") {
+            newW = Math.max(10, Math.round(rr.startW - dx))
+            newH = Math.max(10, Math.round(rr.startH - dy))
+            newX = Math.max(0, Math.round(rr.startElX + dx))
+            newY = Math.max(0, Math.round(rr.startElY + dy))
+          }
         }
         
+        // Clamp position to prevent going completely off canvas
+        newX = Math.max(-newW + 20, Math.min(size.width - 20, newX))
+        newY = Math.max(-newH + 20, Math.min(size.height - 20, newY))
+        
         // Calculate scale factor for text elements
-        const element = slide.elements.find(el => el.id === rr.id)
         const isTextElement = element && ["text", "heading", "subheading", "body", "quote"].includes(element.type)
         
         // Check if Ctrl is currently held (allows toggle during drag)
@@ -1475,7 +3214,7 @@ function SlideCanvas({
           
           if (ctrlHeld) {
             // Ctrl held: Only resize frame, keep font size unchanged
-            onUpdateElement(rr.id, { 
+            scheduleUpdate(rr.id, { 
               x: newX, 
               y: newY, 
               width: newW, 
@@ -1487,7 +3226,7 @@ function SlideCanvas({
             const newFontSize = Math.round(rr.startFontSize * widthScale)
             // Clamp font size to reasonable bounds (min 8, max 500)
             const clampedFontSize = Math.max(8, Math.min(500, newFontSize))
-            onUpdateElement(rr.id, { 
+            scheduleUpdate(rr.id, { 
               x: newX, 
               y: newY, 
               width: newW, 
@@ -1496,16 +3235,36 @@ function SlideCanvas({
             } as Partial<TextElement>)
           }
         } else {
-          onUpdateElement(rr.id, { x: newX, y: newY, width: newW, height: newH })
+          scheduleUpdate(rr.id, { x: newX, y: newY, width: newW, height: newH })
         }
       }
     }
 
     const onPointerUp = () => {
+      // Check if we were dragging/resizing/rotating
+      const wasDragging = draggingRef.current !== null
+      const wasResizing = resizingRef.current !== null
+      const wasRotating = rotatingRef.current !== null
+      
+      // Apply any pending update immediately (without skipping history this time)
+      if (pendingUpdateRef.current) {
+        onUpdateElement(pendingUpdateRef.current.id, pendingUpdateRef.current.updates, true)
+        pendingUpdateRef.current = null
+      }
+      // Cancel pending RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
       draggingRef.current = null
       resizingRef.current = null
       rotatingRef.current = null
       setGuides({}) // Clear guides when drag ends
+      
+      // Commit to history after drag/resize/rotate ends
+      if ((wasDragging || wasResizing || wasRotating) && onDragEnd) {
+        onDragEnd()
+      }
     }
 
     window.addEventListener("pointermove", onPointerMove)
@@ -1514,7 +3273,7 @@ function SlideCanvas({
       window.removeEventListener("pointermove", onPointerMove)
       window.removeEventListener("pointerup", onPointerUp)
     }
-  }, [scaleFactor, onUpdateElement, showGuides, slide.elements, size.width, size.height])
+  }, [scaleFactor, onUpdateElement, onDragEnd, showGuides, slide.elements, size.width, size.height])
 
   const renderElement = (element: SlideElement) => {
     if (previewMode && !element.visible) return null
@@ -1542,6 +3301,15 @@ function SlideCanvas({
       if (!element.locked) {
         // Ctrl+click to add/remove from multi-selection
         onSelectElement(element.id, e.ctrlKey || e.metaKey)
+      }
+    }
+    
+    const handleDoubleClick = (e: React.MouseEvent) => {
+      if (previewMode) return
+      e.stopPropagation()
+      if (!element.locked && element.groupId && onDoubleClickElement) {
+        // Double-click on grouped element to select only that element
+        onDoubleClickElement(element.id)
       }
     }
 
@@ -1619,6 +3387,56 @@ function SlideCanvas({
         const textEl = element as TextElement
         const isEditing = editingTextId === element.id
         
+        // Check if we need special handling
+        const textGradient = (textEl as any).textGradient
+        const bgGradient = (textEl as any).bgGradient
+        const hasTextGradient = textGradient?.enabled
+        const hasBackground = bgGradient?.enabled || textEl.backgroundColor
+        // Need wrapper only when BOTH text gradient AND background exist
+        const needsBgWrapper = hasTextGradient && hasBackground
+        
+        // Get text color style (support gradient) - only apply to parent if NO background wrapper needed
+        const getTextColorStyle = (): React.CSSProperties => {
+          if (hasTextGradient && !needsBgWrapper) {
+            // Text gradient without background - apply to parent div
+            return {
+              backgroundImage: `linear-gradient(${getGradientAngle(textGradient.direction || "to-br")}, ${textGradient.from}, ${textGradient.to})`,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }
+          }
+          if (hasTextGradient && needsBgWrapper) {
+            // Text gradient WITH background - color will be applied to inner span
+            return {}
+          }
+          return { color: textEl.style.color }
+        }
+        
+        // Get text gradient style for inner span (when wrapper is needed)
+        const getTextGradientSpanStyle = (): React.CSSProperties => {
+          if (hasTextGradient) {
+            return {
+              backgroundImage: `linear-gradient(${getGradientAngle(textGradient.direction || "to-br")}, ${textGradient.from}, ${textGradient.to})`,
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }
+          }
+          return {}
+        }
+        
+        // Get background style (support gradient) - only if not using wrapper
+        const getTextBgStyle = (): React.CSSProperties => {
+          if (needsBgWrapper) return {} // Background handled by wrapper
+          if (bgGradient?.enabled) {
+            return {
+              backgroundImage: `linear-gradient(${getGradientAngle(bgGradient.direction || "to-br")}, ${bgGradient.from}, ${bgGradient.to})`,
+            }
+          }
+          return textEl.backgroundColor ? { backgroundColor: textEl.backgroundColor } : {}
+        }
+        
         return (
           <div
             key={element.id}
@@ -1630,11 +3448,11 @@ function SlideCanvas({
               lineHeight: textEl.style.lineHeight,
               letterSpacing: textEl.style.letterSpacing,
               textAlign: textEl.style.textAlign,
-              color: textEl.style.color,
+              ...getTextColorStyle(),
               textTransform: textEl.style.textTransform,
               textDecoration: textEl.style.textDecoration,
               fontStyle: textEl.style.fontStyle,
-              backgroundColor: textEl.backgroundColor,
+              ...getTextBgStyle(),
               borderRadius: textEl.borderRadius,
               padding: `${textEl.padding.top * scaleFactor}px ${textEl.padding.right * scaleFactor}px ${textEl.padding.bottom * scaleFactor}px ${textEl.padding.left * scaleFactor}px`,
               whiteSpace: "pre-wrap",
@@ -1654,36 +3472,87 @@ function SlideCanvas({
                 isSelected && isGrouped && "ring-2 ring-blue-500 ring-offset-2"
               )}
             >
-              {isEditing ? (
-                <textarea
-                  ref={editInputRef}
-                  value={textEl.content}
-                  onChange={(e) => onUpdateElement(element.id, { content: e.target.value } as Partial<TextElement>)}
-                  onBlur={() => setEditingTextId(null)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setEditingTextId(null)
-                    }
-                  }}
+              {/* Background wrapper when text has gradient AND background */}
+              {needsBgWrapper && (
+                <div 
                   style={{
-                    width: '100%',
-                    height: '100%',
-                    background: 'transparent',
-                    border: 'none',
-                    outline: 'none',
-                    resize: 'none',
-                    fontFamily: 'inherit',
-                    fontSize: 'inherit',
-                    fontWeight: 'inherit',
-                    lineHeight: 'inherit',
-                    letterSpacing: 'inherit',
-                    textAlign: 'inherit',
-                    color: 'inherit',
-                    padding: 0,
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: textEl.borderRadius,
+                    pointerEvents: 'none',
+                    ...(bgGradient?.enabled 
+                      ? { backgroundImage: `linear-gradient(${getGradientAngle(bgGradient.direction || "to-br")}, ${bgGradient.from}, ${bgGradient.to})` }
+                      : { backgroundColor: textEl.backgroundColor }
+                    ),
                   }}
-                  autoFocus
                 />
-              ) : textEl.content}
+              )}
+              {/* Text content - use span wrapper only when background wrapper exists, apply gradient to span */}
+              {needsBgWrapper ? (
+                <span style={{ position: 'relative', zIndex: 1, display: 'inline', ...getTextGradientSpanStyle() }}>
+                  {isEditing ? (
+                    <textarea
+                      ref={editInputRef}
+                      value={textEl.content}
+                      onChange={(e) => onUpdateElement(element.id, { content: e.target.value } as Partial<TextElement>)}
+                      onBlur={() => setEditingTextId(null)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setEditingTextId(null)
+                        }
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        resize: 'none',
+                        fontFamily: 'inherit',
+                        fontSize: 'inherit',
+                        fontWeight: 'inherit',
+                        lineHeight: 'inherit',
+                        letterSpacing: 'inherit',
+                        textAlign: 'inherit',
+                        color: 'inherit',
+                        padding: 0,
+                      }}
+                      autoFocus
+                    />
+                  ) : textEl.content}
+                </span>
+              ) : (
+                isEditing ? (
+                  <textarea
+                    ref={editInputRef}
+                    value={textEl.content}
+                    onChange={(e) => onUpdateElement(element.id, { content: e.target.value } as Partial<TextElement>)}
+                    onBlur={() => setEditingTextId(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setEditingTextId(null)
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      resize: 'none',
+                      fontFamily: 'inherit',
+                      fontSize: 'inherit',
+                      fontWeight: 'inherit',
+                      lineHeight: 'inherit',
+                      letterSpacing: 'inherit',
+                      textAlign: 'inherit',
+                      color: 'inherit',
+                      padding: 0,
+                    }}
+                    autoFocus
+                  />
+                ) : textEl.content
+              )}
               {/* Resize handles and rotation handle */}
               {isSelected && !isEditing && (
                 <>
@@ -1710,10 +3579,10 @@ function SlideCanvas({
                     }}
                     title="Rotate"
                   >
-                    <RotateCw style={{ width: 10, height: 10, color: '#3b82f6' }} />
+                    <RotateCw style={{ width: 10, height: 10, color: '#3b82f6', pointerEvents: 'none' }} />
                   </div>
                   {/* Line connecting to rotation handle */}
-                  <div style={{ position: 'absolute', left: '50%', top: -20, width: 1, height: 20, background: '#3b82f6', marginLeft: -0.5, zIndex: 9 }} />
+                  <div style={{ position: 'absolute', left: '50%', top: -20, width: 1, height: 20, background: '#3b82f6', marginLeft: -0.5, zIndex: 9, pointerEvents: 'none' }} />
                 </>
               )}
             </div>
@@ -1729,6 +3598,9 @@ function SlideCanvas({
           const fill = (shapeEl as any).backgroundImage ? `url(#img-${element.id})` : shapeEl.fill
           const stroke = shapeEl.stroke
           const strokeWidth = shapeEl.strokeWidth * scaleFactor
+          const strokeDasharray = shapeEl.strokeDasharray || undefined
+          const strokeLinecap = shapeEl.strokeCap === "none" ? "butt" : (shapeEl.strokeCap || "butt")
+          const strokeLinejoin = shapeEl.strokeCap === "round" ? "round" : "miter"
           
           switch (shapeEl.shapeType) {
             case "triangle":
@@ -1746,6 +3618,9 @@ function SlideCanvas({
                     fill={fill} 
                     stroke={stroke} 
                     strokeWidth={strokeWidth}
+                    strokeDasharray={strokeDasharray}
+                    strokeLinecap={strokeLinecap}
+                    strokeLinejoin={strokeLinejoin}
                   />
                 </svg>
               )
@@ -1764,6 +3639,9 @@ function SlideCanvas({
                     fill={fill} 
                     stroke={stroke} 
                     strokeWidth={strokeWidth}
+                    strokeDasharray={strokeDasharray}
+                    strokeLinecap={strokeLinecap}
+                    strokeLinejoin={strokeLinejoin}
                   />
                 </svg>
               )
@@ -1782,6 +3660,9 @@ function SlideCanvas({
                     fill={fill} 
                     stroke={stroke} 
                     strokeWidth={strokeWidth}
+                    strokeDasharray={strokeDasharray}
+                    strokeLinecap={strokeLinecap}
+                    strokeLinejoin={strokeLinejoin}
                   />
                 </svg>
               )
@@ -1810,6 +3691,9 @@ function SlideCanvas({
                     fill={fill} 
                     stroke={stroke} 
                     strokeWidth={strokeWidth}
+                    strokeDasharray={strokeDasharray}
+                    strokeLinecap={strokeLinecap}
+                    strokeLinejoin={strokeLinejoin}
                   />
                 </svg>
               )
@@ -1831,19 +3715,162 @@ function SlideCanvas({
                     fill={fill} 
                     stroke={stroke} 
                     strokeWidth={strokeWidth}
+                    strokeDasharray={strokeDasharray}
                   />
                 </svg>
               )
             case "line":
+              // Get stroke properties
+              const lineStrokeCap = shapeEl.strokeCap || "round"
+              const lineDasharray = shapeEl.strokeDasharray || undefined
+              const lineArrowStart = shapeEl.strokeArrowStart || "none"
+              const lineArrowEnd = shapeEl.strokeArrowEnd || "none"
+              const lineStrokeWidth = Math.max(strokeWidth, 2)
+              const lineStrokeColor = shapeEl.stroke || shapeEl.fill || "#000000"
+              
+              // Arrow marker IDs
+              const arrowStartId = `arrow-start-${element.id}`
+              const arrowEndId = `arrow-end-${element.id}`
+              
+              // Render arrow marker based on type
+              const renderArrowMarker = (arrowType: string, id: string, isStart: boolean) => {
+                const markerSize = lineStrokeWidth * 3
+                const markerStroke = shapeEl.stroke || shapeEl.fill || "#000000"
+                switch (arrowType) {
+                  case "line-arrow":
+                    return (
+                      <marker
+                        id={id}
+                        markerWidth={markerSize}
+                        markerHeight={markerSize}
+                        refX={isStart ? 0 : markerSize}
+                        refY={markerSize / 2}
+                        orient="auto"
+                        markerUnits="userSpaceOnUse"
+                      >
+                        {isStart ? (
+                          <polyline 
+                            points={`${markerSize},0 0,${markerSize/2} ${markerSize},${markerSize}`} 
+                            fill="none" 
+                            stroke={markerStroke} 
+                            strokeWidth={lineStrokeWidth * 0.8}
+                          />
+                        ) : (
+                          <polyline 
+                            points={`0,0 ${markerSize},${markerSize/2} 0,${markerSize}`} 
+                            fill="none" 
+                            stroke={markerStroke} 
+                            strokeWidth={lineStrokeWidth * 0.8}
+                          />
+                        )}
+                      </marker>
+                    )
+                  case "triangle-arrow":
+                    return (
+                      <marker
+                        id={id}
+                        markerWidth={markerSize}
+                        markerHeight={markerSize}
+                        refX={isStart ? 0 : markerSize}
+                        refY={markerSize / 2}
+                        orient="auto"
+                        markerUnits="userSpaceOnUse"
+                      >
+                        {isStart ? (
+                          <polygon 
+                            points={`${markerSize},0 0,${markerSize/2} ${markerSize},${markerSize}`} 
+                            fill={markerStroke}
+                          />
+                        ) : (
+                          <polygon 
+                            points={`0,0 ${markerSize},${markerSize/2} 0,${markerSize}`} 
+                            fill={markerStroke}
+                          />
+                        )}
+                      </marker>
+                    )
+                  case "reversed-triangle":
+                    return (
+                      <marker
+                        id={id}
+                        markerWidth={markerSize}
+                        markerHeight={markerSize}
+                        refX={isStart ? markerSize : 0}
+                        refY={markerSize / 2}
+                        orient="auto"
+                        markerUnits="userSpaceOnUse"
+                      >
+                        {isStart ? (
+                          <polygon 
+                            points={`0,0 ${markerSize},${markerSize/2} 0,${markerSize}`} 
+                            fill={markerStroke}
+                          />
+                        ) : (
+                          <polygon 
+                            points={`${markerSize},0 0,${markerSize/2} ${markerSize},${markerSize}`} 
+                            fill={markerStroke}
+                          />
+                        )}
+                      </marker>
+                    )
+                  case "circle-arrow":
+                    return (
+                      <marker
+                        id={id}
+                        markerWidth={markerSize}
+                        markerHeight={markerSize}
+                        refX={markerSize / 2}
+                        refY={markerSize / 2}
+                        orient="auto"
+                        markerUnits="userSpaceOnUse"
+                      >
+                        <circle 
+                          cx={markerSize / 2} 
+                          cy={markerSize / 2} 
+                          r={markerSize / 3} 
+                          fill={markerStroke}
+                        />
+                      </marker>
+                    )
+                  case "diamond-arrow":
+                    return (
+                      <marker
+                        id={id}
+                        markerWidth={markerSize}
+                        markerHeight={markerSize}
+                        refX={markerSize / 2}
+                        refY={markerSize / 2}
+                        orient="auto"
+                        markerUnits="userSpaceOnUse"
+                      >
+                        <polygon 
+                          points={`${markerSize/2},0 ${markerSize},${markerSize/2} ${markerSize/2},${markerSize} 0,${markerSize/2}`} 
+                          fill={markerStroke}
+                        />
+                      </marker>
+                    )
+                  default:
+                    return null
+                }
+              }
+              
               return (
-                <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+                <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ overflow: 'visible' }}>
+                  <defs>
+                    {lineArrowStart !== "none" && renderArrowMarker(lineArrowStart, arrowStartId, true)}
+                    {lineArrowEnd !== "none" && renderArrowMarker(lineArrowEnd, arrowEndId, false)}
+                  </defs>
                   <line 
-                    x1={0} 
+                    x1={lineArrowStart !== "none" ? lineStrokeWidth * 2 : 0} 
                     y1={h/2} 
-                    x2={w} 
+                    x2={lineArrowEnd !== "none" ? w - lineStrokeWidth * 2 : w} 
                     y2={h/2} 
-                    stroke={shapeEl.fill} 
-                    strokeWidth={Math.max(strokeWidth, 2)}
+                    stroke={lineStrokeColor} 
+                    strokeWidth={lineStrokeWidth}
+                    strokeLinecap={lineStrokeCap === "none" ? "butt" : lineStrokeCap}
+                    strokeDasharray={lineDasharray}
+                    markerStart={lineArrowStart !== "none" ? `url(#${arrowStartId})` : undefined}
+                    markerEnd={lineArrowEnd !== "none" ? `url(#${arrowEndId})` : undefined}
                   />
                 </svg>
               )
@@ -1909,13 +3936,44 @@ function SlideCanvas({
             )
           }
           
+          // Get padding values for visualization - clamp to prevent overflow
+          const shapePadding = shapeEl.padding || { top: 0, right: 0, bottom: 0, left: 0 }
+          const maxPaddingH = Math.max(0, (element.width * scaleFactor / 2) - 2) // Max half width minus 2px
+          const maxPaddingV = Math.max(0, (element.height * scaleFactor / 2) - 2) // Max half height minus 2px
+          const clampedPadding = {
+            top: Math.min(shapePadding.top * scaleFactor, maxPaddingV),
+            right: Math.min(shapePadding.right * scaleFactor, maxPaddingH),
+            bottom: Math.min(shapePadding.bottom * scaleFactor, maxPaddingV),
+            left: Math.min(shapePadding.left * scaleFactor, maxPaddingH),
+          }
+          const hasPadding = shapePadding.top > 0 || shapePadding.right > 0 || shapePadding.bottom > 0 || shapePadding.left > 0
+          // Check if padding fits within shape
+          const paddingFits = (clampedPadding.left + clampedPadding.right) < (element.width * scaleFactor) &&
+                             (clampedPadding.top + clampedPadding.bottom) < (element.height * scaleFactor)
+          
+          // Check if we need SVG stroke (for gradient stroke or dash-dot pattern)
+          const strokeGrad = (shapeEl as any).strokeGradient
+          const needsSvgStroke = strokeGrad?.enabled || shapeEl.strokeDasharray === "8,4,2,4"
+          const strokeGradientId = `stroke-grad-${element.id}`
+          
+          // Get border radius for SVG
+          const svgBorderRadius = shapeEl.shapeType === "circle" ? Math.min(element.width, element.height) / 2 :
+                                  shapeEl.shapeType === "rounded-rectangle" ? (shapeEl.borderRadius || 8) : 0
+          
           return (
             <div
               key={element.id}
               style={{
                 ...baseStyle,
                 ...shapeBackground,
-                border: shapeEl.strokeWidth > 0 ? `${shapeEl.strokeWidth * scaleFactor}px solid ${shapeEl.stroke}` : undefined,
+                // Only use CSS border if not using SVG stroke
+                borderWidth: shapeEl.strokeWidth > 0 && !needsSvgStroke ? shapeEl.strokeWidth * scaleFactor : undefined,
+                borderStyle: shapeEl.strokeWidth > 0 && !needsSvgStroke ? (
+                  shapeEl.strokeDasharray === "8,4" ? "dashed" : 
+                  shapeEl.strokeDasharray === "2,2" ? "dotted" : 
+                  "solid"
+                ) : undefined,
+                borderColor: shapeEl.strokeWidth > 0 && !needsSvgStroke ? shapeEl.stroke : undefined,
                 borderRadius: shapeEl.shapeType === "circle" ? "50%" : 
                              shapeEl.shapeType === "rounded-rectangle" ? (shapeEl.borderRadius || 8) * scaleFactor : 0,
                 display: 'flex',
@@ -1924,13 +3982,77 @@ function SlideCanvas({
               }}
               onPointerDown={onElementPointerDown}
               onClick={handleClick}
+              onDoubleClick={handleDoubleClick}
               className={cn(
                 "transition-shadow",
                 isSelected && !previewMode && !isGrouped && "ring-2 ring-primary ring-offset-2",
                 isSelected && !previewMode && isGrouped && "ring-2 ring-blue-500 ring-offset-2"
               )}
             >
+              {/* SVG Stroke Overlay for gradient strokes or dash-dot pattern */}
+              {needsSvgStroke && shapeEl.strokeWidth > 0 && (
+                <svg 
+                  style={{ 
+                    position: 'absolute', 
+                    inset: 0, 
+                    width: '100%', 
+                    height: '100%', 
+                    pointerEvents: 'none',
+                    overflow: 'visible'
+                  }}
+                >
+                  <defs>
+                    {strokeGrad?.enabled && (
+                      <linearGradient id={strokeGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={strokeGrad.from} />
+                        <stop offset="100%" stopColor={strokeGrad.to} />
+                      </linearGradient>
+                    )}
+                  </defs>
+                  {shapeEl.shapeType === "circle" ? (
+                    <ellipse
+                      cx="50%"
+                      cy="50%"
+                      rx={`calc(50% - ${(shapeEl.strokeWidth * scaleFactor) / 2}px)`}
+                      ry={`calc(50% - ${(shapeEl.strokeWidth * scaleFactor) / 2}px)`}
+                      fill="none"
+                      stroke={strokeGrad?.enabled ? `url(#${strokeGradientId})` : shapeEl.stroke}
+                      strokeWidth={shapeEl.strokeWidth * scaleFactor}
+                      strokeDasharray={shapeEl.strokeDasharray}
+                    />
+                  ) : (
+                    <rect
+                      x={shapeEl.strokeWidth * scaleFactor / 2}
+                      y={shapeEl.strokeWidth * scaleFactor / 2}
+                      width={`calc(100% - ${shapeEl.strokeWidth * scaleFactor}px)`}
+                      height={`calc(100% - ${shapeEl.strokeWidth * scaleFactor}px)`}
+                      rx={svgBorderRadius * scaleFactor}
+                      ry={svgBorderRadius * scaleFactor}
+                      fill="none"
+                      stroke={strokeGrad?.enabled ? `url(#${strokeGradientId})` : shapeEl.stroke}
+                      strokeWidth={shapeEl.strokeWidth * scaleFactor}
+                      strokeDasharray={shapeEl.strokeDasharray}
+                    />
+                  )}
+                </svg>
+              )}
               {getStickerIcon()}
+              {/* Padding Visualization - Only show if padding fits within shape */}
+              {!previewMode && isSelected && hasPadding && paddingFits && (
+                <div 
+                  className="absolute pointer-events-none"
+                  style={{
+                    top: clampedPadding.top,
+                    left: clampedPadding.left,
+                    right: clampedPadding.right,
+                    bottom: clampedPadding.bottom,
+                    border: '1px dashed #22c55e',
+                    borderRadius: shapeEl.shapeType === "circle" ? "50%" : 
+                                 shapeEl.shapeType === "rounded-rectangle" ? Math.max(0, ((shapeEl.borderRadius || 8) - Math.max(shapePadding.top, shapePadding.left))) * scaleFactor : 0,
+                    zIndex: 5,
+                  }}
+                />
+              )}
               {!previewMode && isSelected && (
                 <>
                   <div data-handle="nw" style={{ position: 'absolute', left: -6, top: -6, width: 12, height: 12, background: '#fff', border: '1px solid #ccc', borderRadius: 2, cursor: 'nwse-resize', zIndex: 10 }} />
@@ -1956,9 +4078,9 @@ function SlideCanvas({
                     }}
                     title="Rotate"
                   >
-                    <RotateCw style={{ width: 10, height: 10, color: '#3b82f6' }} />
+                    <RotateCw style={{ width: 10, height: 10, color: '#3b82f6', pointerEvents: 'none' }} />
                   </div>
-                  <div style={{ position: 'absolute', left: '50%', top: -20, width: 1, height: 20, background: '#3b82f6', marginLeft: -0.5, zIndex: 9 }} />
+                  <div style={{ position: 'absolute', left: '50%', top: -20, width: 1, height: 20, background: '#3b82f6', marginLeft: -0.5, zIndex: 9, pointerEvents: 'none' }} />
                 </>
               )}
             </div>
@@ -1975,6 +4097,7 @@ function SlideCanvas({
             }}
             onPointerDown={onElementPointerDown}
             onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
             className={cn(
               "transition-shadow",
               isSelected && !previewMode && !isGrouped && "ring-2 ring-primary ring-offset-2",
@@ -2007,9 +4130,9 @@ function SlideCanvas({
                   }}
                   title="Rotate"
                 >
-                  <RotateCw style={{ width: 10, height: 10, color: '#3b82f6' }} />
+                  <RotateCw style={{ width: 10, height: 10, color: '#3b82f6', pointerEvents: 'none' }} />
                 </div>
-                <div style={{ position: 'absolute', left: '50%', top: -20, width: 1, height: 20, background: '#3b82f6', marginLeft: -0.5, zIndex: 9 }} />
+                <div style={{ position: 'absolute', left: '50%', top: -20, width: 1, height: 20, background: '#3b82f6', marginLeft: -0.5, zIndex: 9, pointerEvents: 'none' }} />
               </>
             )}
           </div>
@@ -2022,6 +4145,7 @@ function SlideCanvas({
             style={baseStyle}
             onPointerDown={onElementPointerDown}
             onClick={handleClick}
+            onDoubleClick={handleDoubleClick}
             className={cn(
               "bg-muted/50 flex items-center justify-center transition-shadow",
               isSelected && !previewMode && "ring-2 ring-primary ring-offset-2"
@@ -2057,6 +4181,105 @@ function SlideCanvas({
             backgroundSize: `${20 * scaleFactor}px ${20 * scaleFactor}px`,
           }}
         />
+      )}
+      
+      {/* Margin Guides */}
+      {showMargins && !previewMode && (canvasMargins.top > 0 || canvasMargins.right > 0 || canvasMargins.bottom > 0 || canvasMargins.left > 0) && (
+        <>
+          {/* Top margin line */}
+          {canvasMargins.top > 0 && (
+            <div 
+              className="absolute left-0 right-0 pointer-events-none"
+              style={{
+                top: canvasMargins.top * scaleFactor,
+                height: 1,
+                borderTop: '1px dashed #ef4444',
+                zIndex: 9998,
+              }}
+            />
+          )}
+          {/* Bottom margin line */}
+          {canvasMargins.bottom > 0 && (
+            <div 
+              className="absolute left-0 right-0 pointer-events-none"
+              style={{
+                bottom: canvasMargins.bottom * scaleFactor,
+                height: 1,
+                borderTop: '1px dashed #ef4444',
+                zIndex: 9998,
+              }}
+            />
+          )}
+          {/* Left margin line */}
+          {canvasMargins.left > 0 && (
+            <div 
+              className="absolute top-0 bottom-0 pointer-events-none"
+              style={{
+                left: canvasMargins.left * scaleFactor,
+                width: 1,
+                borderLeft: '1px dashed #ef4444',
+                zIndex: 9998,
+              }}
+            />
+          )}
+          {/* Right margin line */}
+          {canvasMargins.right > 0 && (
+            <div 
+              className="absolute top-0 bottom-0 pointer-events-none"
+              style={{
+                right: canvasMargins.right * scaleFactor,
+                width: 1,
+                borderLeft: '1px dashed #ef4444',
+                zIndex: 9998,
+              }}
+            />
+          )}
+          {/* Margin area indicators (shaded corners) */}
+          <div 
+            className="absolute pointer-events-none"
+            style={{
+              top: 0,
+              left: 0,
+              right: 0,
+              height: canvasMargins.top * scaleFactor,
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              zIndex: 9997,
+            }}
+          />
+          <div 
+            className="absolute pointer-events-none"
+            style={{
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: canvasMargins.bottom * scaleFactor,
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              zIndex: 9997,
+            }}
+          />
+          <div 
+            className="absolute pointer-events-none"
+            style={{
+              top: canvasMargins.top * scaleFactor,
+              left: 0,
+              bottom: canvasMargins.bottom * scaleFactor,
+              width: canvasMargins.left * scaleFactor,
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              zIndex: 9997,
+            }}
+          />
+          <div 
+            className="absolute pointer-events-none"
+            style={{
+              top: canvasMargins.top * scaleFactor,
+              right: 0,
+              bottom: canvasMargins.bottom * scaleFactor,
+              width: canvasMargins.right * scaleFactor,
+              backgroundColor: 'rgba(239, 68, 68, 0.08)',
+              zIndex: 9997,
+            }}
+          />
+        </>
       )}
       
       {/* Center Alignment Guides */}
@@ -2098,7 +4321,9 @@ interface ElementPropertiesProps {
   onDuplicate: () => void
   onGroup?: () => void
   onUngroup?: () => void
+  onRemoveFromGroup?: () => void
   onAlign?: (alignment: "left" | "center" | "right" | "top" | "middle" | "bottom") => void
+  onDistributeWithGap?: (direction: "horizontal" | "vertical", gap: number) => void
   canGroup?: boolean
   canUngroup?: boolean
 }
@@ -2111,11 +4336,23 @@ function ElementProperties({
   onDuplicate,
   onGroup,
   onUngroup,
+  onRemoveFromGroup,
   onAlign,
+  onDistributeWithGap,
   canGroup = false,
   canUngroup = false,
 }: ElementPropertiesProps) {
   const [activeTab, setActiveTab] = useState<"properties" | "position">("properties")
+  const [distributeGap, setDistributeGap] = useState(10)
+  const [distributeDirection, setDistributeDirection] = useState<"horizontal" | "vertical">("horizontal")
+  const [showFillPopup, setShowFillPopup] = useState(false)
+  const [showStrokePopup, setShowStrokePopup] = useState(false)
+  const [showTextColorPopup, setShowTextColorPopup] = useState(false)
+  const [showTextBgPopup, setShowTextBgPopup] = useState(false)
+  const [fillPopupPos, setFillPopupPos] = useState({ x: 100, y: 100 })
+  const [strokePopupPos, setStrokePopupPos] = useState({ x: 100, y: 100 })
+  const [textColorPopupPos, setTextColorPopupPos] = useState({ x: 100, y: 100 })
+  const [textBgPopupPos, setTextBgPopupPos] = useState({ x: 100, y: 100 })
   
   if (!element) {
     return (
@@ -2133,25 +4370,31 @@ function ElementProperties({
     <div className="flex flex-col h-full">
       {/* Tab Switcher */}
       <div className="p-2 border-b">
-        <div className="flex gap-1 bg-muted rounded-md p-1">
-          <Button
-            variant={activeTab === "properties" ? "default" : "ghost"}
-            size="sm"
-            className="flex-1"
+        <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
+          <button
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              activeTab === "properties" 
+                ? "bg-primary text-primary-foreground shadow-sm" 
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
             onClick={() => setActiveTab("properties")}
           >
-            <Settings2 className="h-4 w-4 mr-1" />
+            <Settings2 className="h-3.5 w-3.5" />
             Properties
-          </Button>
-          <Button
-            variant={activeTab === "position" ? "default" : "ghost"}
-            size="sm"
-            className="flex-1"
+          </button>
+          <button
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+              activeTab === "position" 
+                ? "bg-primary text-primary-foreground shadow-sm" 
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
             onClick={() => setActiveTab("position")}
           >
-            <Move className="h-4 w-4 mr-1" />
+            <Move className="h-3.5 w-3.5" />
             Position
-          </Button>
+          </button>
         </div>
       </div>
       
@@ -2170,27 +4413,101 @@ function ElementProperties({
           </div>
 
           {/* Group/Ungroup Actions */}
-          {(canGroup || canUngroup) && (
-            <div className="flex gap-2">
-              {canGroup && onGroup && (
-                <Button variant="outline" size="sm" className="flex-1" onClick={onGroup}>
-                  <Group className="h-4 w-4 mr-1" />
-                  Group
-                </Button>
-              )}
-              {canUngroup && onUngroup && (
-                <Button variant="outline" size="sm" className="flex-1" onClick={onUngroup}>
-                  <Ungroup className="h-4 w-4 mr-1" />
-                  Ungroup
+          {(canGroup || canUngroup || (element.groupId && onRemoveFromGroup)) && (
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                {canGroup && onGroup && (
+                  <Button variant="outline" size="sm" className="flex-1" onClick={onGroup}>
+                    <Group className="h-4 w-4 mr-1" />
+                    Group
+                  </Button>
+                )}
+                {canUngroup && onUngroup && (
+                  <Button variant="outline" size="sm" className="flex-1" onClick={onUngroup}>
+                    <Ungroup className="h-4 w-4 mr-1" />
+                    Ungroup All
+                  </Button>
+                )}
+              </div>
+              {element.groupId && onRemoveFromGroup && (
+                <Button variant="outline" size="sm" className="w-full" onClick={onRemoveFromGroup}>
+                  <Minus className="h-4 w-4 mr-1" />
+                  Remove from Group
                 </Button>
               )}
             </div>
           )}
 
-          {/* Alignment Controls (for groups or multi-selection) */}
-          {(canGroup || canUngroup) && onAlign && (
+          {/* Distribute with Gap (for groups or multi-selection) */}
+          {(canGroup || canUngroup || element.groupId) && onDistributeWithGap && (
             <div className="space-y-2">
-              <Label className="text-xs font-medium">Alignment</Label>
+              <Label className="text-xs font-medium">Gap Distribution</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={distributeGap}
+                  onChange={(e) => {
+                    const newGap = Number(e.target.value)
+                    setDistributeGap(newGap)
+                    // Auto-apply with current direction when gap changes
+                    onDistributeWithGap(distributeDirection, newGap)
+                  }}
+                  className="h-8 flex-1"
+                  min={0}
+                />
+                <span className="text-xs text-muted-foreground shrink-0">px</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={distributeDirection === "horizontal" ? "default" : "outline"} 
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => {
+                        setDistributeDirection("horizontal")
+                        onDistributeWithGap("horizontal", distributeGap)
+                      }}
+                    >
+                      <AlignHorizontalJustifyCenter className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Distribute Horizontally</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={distributeDirection === "vertical" ? "default" : "outline"} 
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => {
+                        setDistributeDirection("vertical")
+                        onDistributeWithGap("vertical", distributeGap)
+                      }}
+                    >
+                      <AlignVerticalJustifyCenter className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Distribute Vertically</TooltipContent>
+                </Tooltip>
+              </div>
+            </div>
+          )}
+
+          {/* Shape Padding - Above Alignment */}
+          {element.type === "shape" && !["line"].includes((element as ShapeElement).shapeType) && (
+            <SpacingControl
+              label="Padding"
+              value={(element as ShapeElement).padding || { top: 0, right: 0, bottom: 0, left: 0 }}
+              onChange={(padding) => onUpdate({ padding } as Partial<ShapeElement>)}
+              maxValue={100}
+            />
+          )}
+
+          {/* Alignment Controls (for single elements align to canvas, or multi-select) */}
+          {onAlign && (
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">
+                Alignment {canGroup || canUngroup ? "(to selection)" : "(to canvas)"}
+              </Label>
               <div className="grid grid-cols-3 gap-1">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -2407,6 +4724,22 @@ function ElementProperties({
                     />
                   </div>
 
+                  {/* Padding & Margin Controls - Moved to top */}
+                  <SpacingControl
+                    label="Padding"
+                    value={textElement.padding}
+                    onChange={(padding) => onUpdate({ padding } as Partial<TextElement>)}
+                    maxValue={50}
+                  />
+                  <SpacingControl
+                    label="Margin"
+                    value={textElement.margin || { top: 0, right: 0, bottom: 0, left: 0 }}
+                    onChange={(margin) => onUpdate({ margin } as Partial<TextElement>)}
+                    maxValue={100}
+                  />
+
+                  <Separator />
+
                   {/* Font Family */}
                   <div>
                     <Label className="text-xs">Font Family</Label>
@@ -2515,16 +4848,48 @@ function ElementProperties({
                     </div>
                   </div>
 
-                  {/* Text Color */}
-                  <div>
+                  {/* Text Color - Opens popup */}
+                  <div className="space-y-2">
                     <Label className="text-xs">Text Color</Label>
-                    <ColorPicker
-                      color={textElement.style.color}
-                      onChange={(c) => onUpdate({ 
-                        style: { ...textElement.style, color: c } 
-                      } as Partial<TextElement>)}
-                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start gap-2 h-8"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setTextColorPopupPos({ x: rect.left - 270, y: rect.top })
+                        setShowTextColorPopup(true)
+                      }}
+                    >
+                      <div 
+                        className="h-4 w-4 rounded border"
+                        style={{ 
+                          background: (textElement as any).textGradient?.enabled 
+                            ? `linear-gradient(${getGradientAngle((textElement as any).textGradient?.direction || "to-br")}, ${(textElement as any).textGradient?.from}, ${(textElement as any).textGradient?.to})`
+                            : textElement.style.color 
+                        }}
+                      />
+                      <span className="text-xs truncate">
+                        {(textElement as any).textGradient?.enabled ? "Gradient" : textElement.style.color}
+                      </span>
+                    </Button>
                   </div>
+                  
+                  {/* Text Color Popup */}
+                  <TextColorPopup
+                    isOpen={showTextColorPopup}
+                    onClose={() => setShowTextColorPopup(false)}
+                    color={textElement.style.color}
+                    gradient={(textElement as any).textGradient}
+                    onApply={(updates) => {
+                      const styleUpdates: any = {}
+                      if (updates.color) styleUpdates.style = { ...textElement.style, color: updates.color }
+                      if (updates.gradient) styleUpdates.textGradient = updates.gradient
+                      onUpdate(styleUpdates as Partial<TextElement>)
+                    }}
+                    title="Text Color"
+                    position={textColorPopupPos}
+                  />
 
                   {/* Line Height & Letter Spacing */}
                   <div className="grid grid-cols-2 gap-2">
@@ -2555,29 +4920,61 @@ function ElementProperties({
 
                   <Separator />
 
-                  {/* Text Background Color */}
-                  <div>
+                  {/* Text Background Color - Opens popup */}
+                  <div className="space-y-2">
                     <Label className="text-xs">Background Color</Label>
-                    <ColorPicker
-                      color={textElement.backgroundColor || "transparent"}
-                      onChange={(c) => onUpdate({ 
-                        backgroundColor: c === "transparent" ? undefined : c 
-                      } as Partial<TextElement>)}
-                    />
-                    {textElement.backgroundColor && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start gap-2 h-8"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setTextBgPopupPos({ x: rect.left - 270, y: rect.top })
+                        setShowTextBgPopup(true)
+                      }}
+                    >
+                      <div 
+                        className="h-4 w-4 rounded border"
+                        style={{ 
+                          background: (textElement as any).bgGradient?.enabled 
+                            ? `linear-gradient(${getGradientAngle((textElement as any).bgGradient?.direction || "to-br")}, ${(textElement as any).bgGradient?.from}, ${(textElement as any).bgGradient?.to})`
+                            : (textElement.backgroundColor || "transparent")
+                        }}
+                      />
+                      <span className="text-xs truncate">
+                        {(textElement as any).bgGradient?.enabled ? "Gradient" : (textElement.backgroundColor || "transparent")}
+                      </span>
+                    </Button>
+                    {(textElement.backgroundColor || (textElement as any).bgGradient?.enabled) && (
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="w-full mt-1 h-7 text-xs"
-                        onClick={() => onUpdate({ backgroundColor: undefined } as Partial<TextElement>)}
+                        className="w-full h-7 text-xs"
+                        onClick={() => onUpdate({ backgroundColor: undefined, bgGradient: undefined } as any)}
                       >
                         Remove Background
                       </Button>
                     )}
                   </div>
+                  
+                  {/* Text Background Popup */}
+                  <TextColorPopup
+                    isOpen={showTextBgPopup}
+                    onClose={() => setShowTextBgPopup(false)}
+                    color={textElement.backgroundColor || "transparent"}
+                    gradient={(textElement as any).bgGradient}
+                    onApply={(updates) => {
+                      const bgUpdates: any = {}
+                      if (updates.color !== undefined) bgUpdates.backgroundColor = updates.color === "transparent" ? undefined : updates.color
+                      if (updates.gradient) bgUpdates.bgGradient = updates.gradient
+                      onUpdate(bgUpdates as Partial<TextElement>)
+                    }}
+                    title="Background Color"
+                    position={textBgPopupPos}
+                  />
 
                   {/* Border Radius (for background) */}
-                  {textElement.backgroundColor && (
+                  {(textElement.backgroundColor || (textElement as any).bgGradient?.enabled) && (
                     <div className="space-y-2">
                       <Label className="text-xs">Background Radius ({textElement.borderRadius || 0}px)</Label>
                       <Slider
@@ -2589,24 +4986,6 @@ function ElementProperties({
                       />
                     </div>
                   )}
-
-                  <Separator />
-
-                  {/* Padding Control */}
-                  <SpacingControl
-                    label="Padding"
-                    value={textElement.padding}
-                    onChange={(padding) => onUpdate({ padding } as Partial<TextElement>)}
-                    maxValue={50}
-                  />
-
-                  {/* Margin Control */}
-                  <SpacingControl
-                    label="Margin"
-                    value={textElement.margin || { top: 0, right: 0, bottom: 0, left: 0 }}
-                    onChange={(margin) => onUpdate({ margin } as Partial<TextElement>)}
-                    maxValue={100}
-                  />
                 </div>
               )}
 
@@ -2641,181 +5020,105 @@ function ElementProperties({
                     </Select>
                   </div>
                   
+                  {/* Fill Color Button - Opens popup (hide for lines since lines use stroke only) */}
+                  {(element as ShapeElement).shapeType !== "line" && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">
+                        {(element as ShapeElement).isSticker ? "Background Color" : "Fill Color"}
+                      </Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-start gap-2 h-8"
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          setFillPopupPos({ x: rect.left - 270, y: rect.top })
+                          setShowFillPopup(true)
+                        }}
+                      >
+                        <div 
+                          className="h-4 w-4 rounded border"
+                          style={{ 
+                            background: (element as ShapeElement).gradient?.enabled 
+                              ? `linear-gradient(${getGradientAngle((element as ShapeElement).gradient?.direction || "to-br")}, ${(element as ShapeElement).gradient?.from}, ${(element as ShapeElement).gradient?.to})`
+                              : (element as ShapeElement).fill 
+                          }}
+                        />
+                        <span className="text-xs truncate">
+                          {(element as ShapeElement).gradient?.enabled ? "Gradient" : (element as ShapeElement).fill}
+                        </span>
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {/* Fill Color Popup */}
+                  <FillColorPopup
+                    isOpen={showFillPopup}
+                    onClose={() => setShowFillPopup(false)}
+                    fill={(element as ShapeElement).fill}
+                    gradient={(element as ShapeElement).gradient}
+                    backgroundImage={(element as any).backgroundImage}
+                    onApply={(updates) => onUpdate(updates as Partial<ShapeElement>)}
+                    position={fillPopupPos}
+                  />
+                  
+                  {/* Stroke/Line Color Button - Opens popup */}
                   <div className="space-y-2">
                     <Label className="text-xs">
-                      {(element as ShapeElement).isSticker ? "Background Color" : "Fill Color"}
+                      {(element as ShapeElement).shapeType === "line" ? "Line Color" : "Stroke"}
                     </Label>
-                    <ColorPicker
-                      color={(element as ShapeElement).fill}
-                      onChange={(c) => onUpdate({ fill: c } as Partial<ShapeElement>)}
-                    />
-                  </div>
-                  
-                  {/* Image Background for Shape */}
-                  <div className="space-y-2">
-                    <Label className="text-xs">Image Background (URL)</Label>
-                    <Input
-                      type="text"
-                      placeholder="https://example.com/image.jpg"
-                      value={(element as any).backgroundImage || ''}
-                      onChange={(e) => onUpdate({ backgroundImage: e.target.value || undefined } as any)}
-                      className="h-9"
-                    />
-                  </div>
-                  
-                  {/* Upload Image from Device */}
-                  <div className="space-y-2">
-                    <Label className="text-xs">Or upload from device</Label>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      className="h-9 text-xs"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) {
-                          const reader = new FileReader()
-                          reader.onload = (event) => {
-                            onUpdate({ backgroundImage: event.target?.result as string } as any)
-                          }
-                          reader.readAsDataURL(file)
-                        }
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full justify-start gap-2 h-8"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect()
+                        setStrokePopupPos({ x: rect.left - 290, y: rect.top })
+                        setShowStrokePopup(true)
                       }}
-                    />
+                    >
+                      <div 
+                        className="h-4 w-4 rounded border flex items-center justify-center"
+                        style={{ borderColor: (element as ShapeElement).stroke, borderWidth: 2 }}
+                      >
+                        <div 
+                          className="h-2 w-2 rounded-sm"
+                          style={{ backgroundColor: (element as ShapeElement).stroke }}
+                        />
+                      </div>
+                      <span className="text-xs truncate">
+                        {(element as ShapeElement).strokeWidth}px • {(element as ShapeElement).stroke}
+                      </span>
+                    </Button>
                   </div>
                   
-                  <div className="space-y-2">
-                    <Label className="text-xs">Stroke Color</Label>
-                    <ColorPicker
-                      color={(element as ShapeElement).stroke}
-                      onChange={(c) => onUpdate({ stroke: c } as Partial<ShapeElement>)}
-                    />
-                  </div>
+                  {/* Stroke Popup */}
+                  <StrokeColorPopup
+                    isOpen={showStrokePopup}
+                    onClose={() => setShowStrokePopup(false)}
+                    stroke={(element as ShapeElement).stroke}
+                    strokeWidth={(element as ShapeElement).strokeWidth}
+                    strokeGradient={(element as any).strokeGradient}
+                    strokeCap={(element as ShapeElement).strokeCap}
+                    strokeDasharray={(element as ShapeElement).strokeDasharray}
+                    strokeArrowStart={(element as ShapeElement).strokeArrowStart}
+                    strokeArrowEnd={(element as ShapeElement).strokeArrowEnd}
+                    isLine={(element as ShapeElement).shapeType === "line"}
+                    onApply={(updates) => onUpdate(updates as Partial<ShapeElement>)}
+                    position={strokePopupPos}
+                  />
                   
-                  <div className="space-y-2">
-                    <Label className="text-xs">Stroke Width ({(element as ShapeElement).strokeWidth}px)</Label>
-                    <Slider
-                      value={[(element as ShapeElement).strokeWidth]}
-                      onValueChange={([v]) => onUpdate({ strokeWidth: v } as Partial<ShapeElement>)}
-                      min={0}
-                      max={20}
-                      step={1}
-                      className="mt-2"
-                    />
-                  </div>
-
-                  {/* Stroke Cap */}
-                  {(element as ShapeElement).strokeWidth > 0 && (
+                  {/* Line Weight - Only for lines */}
+                  {(element as ShapeElement).shapeType === "line" && (
                     <div className="space-y-2">
-                      <Label className="text-xs">Stroke Cap</Label>
-                      <Select
-                        value={(element as ShapeElement).strokeCap || "none"}
-                        onValueChange={(v) => onUpdate({ strokeCap: v as StrokeCap } as Partial<ShapeElement>)}
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STROKE_CAP_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.id} value={opt.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="w-4 text-center">{opt.icon}</span>
-                                {opt.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Stroke Arrow Start */}
-                  {(element as ShapeElement).strokeWidth > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-xs">Arrow Start</Label>
-                      <Select
-                        value={(element as ShapeElement).strokeArrowStart || "none"}
-                        onValueChange={(v) => onUpdate({ strokeArrowStart: v as StrokeArrow } as Partial<ShapeElement>)}
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STROKE_ARROW_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.id} value={opt.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="w-4 text-center">{opt.icon}</span>
-                                {opt.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Stroke Arrow End */}
-                  {(element as ShapeElement).strokeWidth > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-xs">Arrow End</Label>
-                      <Select
-                        value={(element as ShapeElement).strokeArrowEnd || "none"}
-                        onValueChange={(v) => onUpdate({ strokeArrowEnd: v as StrokeArrow } as Partial<ShapeElement>)}
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STROKE_ARROW_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.id} value={opt.id}>
-                              <div className="flex items-center gap-2">
-                                <span className="w-4 text-center">{opt.icon}</span>
-                                {opt.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {/* Stroke Dash Pattern */}
-                  {(element as ShapeElement).strokeWidth > 0 && (
-                    <div className="space-y-2">
-                      <Label className="text-xs">Stroke Style</Label>
-                      <Select
-                        value={(element as ShapeElement).strokeDasharray || "solid"}
-                        onValueChange={(v) => onUpdate({ strokeDasharray: v === "solid" ? undefined : v } as Partial<ShapeElement>)}
-                      >
-                        <SelectTrigger className="h-8">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="solid">
-                            <div className="flex items-center gap-2">
-                              <div className="w-12 h-0.5 bg-current" />
-                              Solid
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="5,5">
-                            <div className="flex items-center gap-2">
-                              <div className="w-12 h-0.5 bg-current" style={{ borderTop: "2px dashed currentColor" }} />
-                              Dashed
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="2,2">
-                            <div className="flex items-center gap-2">
-                              <div className="w-12 h-0.5 bg-current" style={{ borderTop: "2px dotted currentColor" }} />
-                              Dotted
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="10,5,2,5">
-                            <div className="flex items-center gap-2">
-                              <div className="w-12 h-0.5 border-t-2 border-dashed" />
-                              Dash-Dot
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="text-xs">Line Weight ({(element as ShapeElement).strokeWidth}px)</Label>
+                      <Slider
+                        value={[(element as ShapeElement).strokeWidth]}
+                        onValueChange={([v]) => onUpdate({ strokeWidth: v } as Partial<ShapeElement>)}
+                        min={1}
+                        max={20}
+                        step={1}
+                      />
                     </div>
                   )}
                   
@@ -2835,70 +5138,6 @@ function ElementProperties({
 
                   <Separator />
 
-                  {/* Gradient Fill for Shapes */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium">Gradient Fill</Label>
-                      <Switch
-                        checked={(element as ShapeElement).gradient?.enabled || false}
-                        onCheckedChange={(checked) => onUpdate({ 
-                          gradient: checked 
-                            ? { enabled: true, from: (element as ShapeElement).fill, to: "#ffffff", direction: "to-br" as GradientDirection }
-                            : { enabled: false, from: "", to: "", direction: "to-br" as GradientDirection }
-                        } as Partial<ShapeElement>)}
-                      />
-                    </div>
-                    {(element as ShapeElement).gradient?.enabled && (
-                      <>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs">From</Label>
-                            <ColorPicker
-                              color={(element as ShapeElement).gradient?.from || "#000000"}
-                              onChange={(c) => onUpdate({ 
-                                gradient: { ...(element as ShapeElement).gradient!, from: c }
-                              } as Partial<ShapeElement>)}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs">To</Label>
-                            <ColorPicker
-                              color={(element as ShapeElement).gradient?.to || "#ffffff"}
-                              onChange={(c) => onUpdate({ 
-                                gradient: { ...(element as ShapeElement).gradient!, to: c }
-                              } as Partial<ShapeElement>)}
-                            />
-                          </div>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Direction</Label>
-                          <Select
-                            value={(element as ShapeElement).gradient?.direction || "to-br"}
-                            onValueChange={(v) => onUpdate({ 
-                              gradient: { ...(element as ShapeElement).gradient!, direction: v as GradientDirection }
-                            } as Partial<ShapeElement>)}
-                          >
-                            <SelectTrigger className="h-8">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="to-t">↑ To Top</SelectItem>
-                              <SelectItem value="to-b">↓ To Bottom</SelectItem>
-                              <SelectItem value="to-l">← To Left</SelectItem>
-                              <SelectItem value="to-r">→ To Right</SelectItem>
-                              <SelectItem value="to-tl">↖ To Top Left</SelectItem>
-                              <SelectItem value="to-tr">↗ To Top Right</SelectItem>
-                              <SelectItem value="to-bl">↙ To Bottom Left</SelectItem>
-                              <SelectItem value="to-br">↘ To Bottom Right</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <Separator />
-
                   {/* Pattern Overlay for Shapes */}
                   <div className="space-y-3">
                     <Label className="text-xs font-medium">Pattern Overlay</Label>
@@ -2909,21 +5148,6 @@ function ElementProperties({
                   </div>
 
                   <Separator />
-
-                  {/* Padding & Margin for Shapes */}
-                  <SpacingControl
-                    label="Padding"
-                    value={(element as ShapeElement).padding || { top: 0, right: 0, bottom: 0, left: 0 }}
-                    onChange={(padding) => onUpdate({ padding } as Partial<ShapeElement>)}
-                    maxValue={100}
-                  />
-
-                  <SpacingControl
-                    label="Margin"
-                    value={(element as ShapeElement).margin || { top: 0, right: 0, bottom: 0, left: 0 }}
-                    onChange={(margin) => onUpdate({ margin } as Partial<ShapeElement>)}
-                    maxValue={100}
-                  />
 
                   {/* Sticker Icon Color (only for stickers) */}
                   {(element as ShapeElement).isSticker && (
@@ -2964,7 +5188,7 @@ function ElementProperties({
 interface CarouselDesignerProps {
   initialContent?: string[]
   onSave?: (template: CarouselTemplate) => void
-  onExport?: (format: "png" | "pdf", slides: Blob[]) => void
+  onExport?: (format: ExportFormat, slides: Blob[]) => void
 }
 
 export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselDesignerProps) {
@@ -2976,6 +5200,8 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
   const [selectedElementIds, setSelectedElementIds] = useState<Set<string>>(new Set()) // Multi-selection
   const [zoom, setZoom] = useState(50)
   const [showGrid, setShowGrid] = useState(false)
+  const [showMargins, setShowMargins] = useState(true) // Show margin guides visually
+  const [canvasMarginsState, setCanvasMarginsState] = useState<Spacing>({ top: 0, right: 0, bottom: 0, left: 0 })
   const [exportWithGrid, setExportWithGrid] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
   const [isNotepadOpen, setIsNotepadOpen] = useState(false)
@@ -2984,10 +5210,35 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [isExporting, setIsExporting] = useState(false)
   const [showExportDialog, setShowExportDialog] = useState(false)
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("png")
+  const [exportPageRange, setExportPageRange] = useState<string>("all") // "all", "current", or custom like "1,3-5"
   const [clipboard, setClipboard] = useState<SlideElement[]>([]) // For copy/paste
   const [originalTemplate, setOriginalTemplate] = useState<CarouselTemplate | null>(null) // Store original for scaling
   const [templateStyle, setTemplateStyle] = useState<string>("professional") // Template style category
   const slideRefs = useRef<(HTMLDivElement | null)[]>([])
+  
+  // Ref to track the last saved template for comparison (prevents duplicate history entries)
+  const lastSavedTemplateRef = useRef<string>("")
+  
+  // Popup states
+  const [showMarginPopup, setShowMarginPopup] = useState(false)
+  const [showFillPopup, setShowFillPopup] = useState(false)
+  const [showStrokePopup, setShowStrokePopup] = useState(false)
+  const [popupPosition, setPopupPosition] = useState({ x: 100, y: 100 })
+  
+  // Canvas margins helper - use state for reactivity
+  const canvasMargins = canvasMarginsState
+  const setCanvasMargins = (margins: Spacing) => {
+    setCanvasMarginsState(margins)
+    // Also update template if exists
+    if (template) {
+      setTemplate({
+        ...template,
+        canvasMargins: margins,
+        updatedAt: Date.now(),
+      })
+    }
+  }
 
   const currentSlide = template?.slides[currentSlideIndex]
   const selectedElement = currentSlide?.elements.find(el => el.id === selectedElementId) || null
@@ -3170,15 +5421,29 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
   // Undo/Redo handlers
   const handleUndo = useCallback(() => {
     if (historyIndex > 0) {
+      const prevTemplate = history[historyIndex - 1]
       setHistoryIndex(historyIndex - 1)
-      setTemplate(history[historyIndex - 1])
+      setTemplate(prevTemplate)
+      // Update last saved ref to prevent duplicate entries
+      lastSavedTemplateRef.current = JSON.stringify({
+        slides: prevTemplate.slides,
+        palette: prevTemplate.palette,
+        size: prevTemplate.size,
+      })
     }
   }, [historyIndex, history])
 
   const handleRedo = useCallback(() => {
     if (historyIndex < history.length - 1) {
+      const nextTemplate = history[historyIndex + 1]
       setHistoryIndex(historyIndex + 1)
-      setTemplate(history[historyIndex + 1])
+      setTemplate(nextTemplate)
+      // Update last saved ref to prevent duplicate entries
+      lastSavedTemplateRef.current = JSON.stringify({
+        slides: nextTemplate.slides,
+        palette: nextTemplate.palette,
+        size: nextTemplate.size,
+      })
     }
   }, [historyIndex, history])
 
@@ -3195,6 +5460,12 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
     setShowTemplatePicker(false)
     setHistory([newTemplate])
     setHistoryIndex(0)
+    // Initialize the last saved ref
+    lastSavedTemplateRef.current = JSON.stringify({
+      slides: newTemplate.slides,
+      palette: newTemplate.palette,
+      size: newTemplate.size,
+    })
   }
 
   const handleCreateNew = () => {
@@ -3204,10 +5475,30 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
     setShowTemplatePicker(false)
     setHistory([newTemplate])
     setHistoryIndex(0)
+    // Initialize the last saved ref
+    lastSavedTemplateRef.current = JSON.stringify({
+      slides: newTemplate.slides,
+      palette: newTemplate.palette,
+      size: newTemplate.size,
+    })
   }
 
-  // History Management
+  // History Management - only saves if template actually changed
   const saveToHistory = useCallback((newTemplate: CarouselTemplate) => {
+    // Create a simplified hash of the template for comparison (exclude updatedAt)
+    const templateHash = JSON.stringify({
+      slides: newTemplate.slides,
+      palette: newTemplate.palette,
+      size: newTemplate.size,
+    })
+    
+    // Don't save if nothing changed
+    if (templateHash === lastSavedTemplateRef.current) {
+      return
+    }
+    
+    lastSavedTemplateRef.current = templateHash
+    
     setHistory(prev => {
       const newHistory = prev.slice(0, historyIndex + 1)
       return [...newHistory, newTemplate]
@@ -3262,7 +5553,8 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
   }
 
   // Element Management
-  const handleUpdateElement = (elementId: string, updates: Partial<SlideElement>) => {
+  // skipHistory: when true, doesn't save to history (used during continuous operations like dragging)
+  const handleUpdateElement = (elementId: string, updates: Partial<SlideElement>, skipHistory = false) => {
     if (!template || !currentSlide) return
 
     // Find the element being updated
@@ -3275,7 +5567,15 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
 
     let newTemplate: CarouselTemplate
 
-    if (isPositionUpdate && groupId) {
+    // Only move the entire group if ALL members of the group are selected
+    // If only one element is selected (via layers panel), move only that element
+    const groupMembers = groupId 
+      ? currentSlide.elements.filter(el => el.groupId === groupId).map(el => el.id)
+      : []
+    const allGroupMembersSelected = groupMembers.length > 0 && 
+      groupMembers.every(id => selectedElementIds.has(id))
+
+    if (isPositionUpdate && groupId && allGroupMembersSelected) {
       // Calculate the delta movement
       const deltaX = ('x' in updates ? updates.x! : element.x) - element.x
       const deltaY = ('y' in updates ? updates.y! : element.y) - element.y
@@ -3304,7 +5604,7 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
         }),
       }
     } else {
-      // Standard update for single element
+      // Standard update for single element (or individual element in a group)
       newTemplate = {
         ...template,
         updatedAt: Date.now(),
@@ -3322,8 +5622,19 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
     }
     
     setTemplate(newTemplate)
-    saveToHistory(newTemplate)
+    
+    // Only save to history if not skipping (e.g., save on drag end, not during drag)
+    if (!skipHistory) {
+      saveToHistory(newTemplate)
+    }
   }
+  
+  // Wrapper to commit history - called when drag/resize/rotate ends
+  const commitToHistory = useCallback(() => {
+    if (template) {
+      saveToHistory(template)
+    }
+  }, [template, saveToHistory])
 
   const handleDeleteElement = () => {
     if (!template || !selectedElementId) return
@@ -3345,7 +5656,54 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
   }
 
   const handleDuplicateElement = () => {
-    if (!template || !selectedElement) return
+    if (!template || !currentSlide) return
+    
+    // If element is part of a group, duplicate the entire group
+    if (selectedElement?.groupId) {
+      const groupId = selectedElement.groupId
+      const groupElements = currentSlide.elements.filter(el => el.groupId === groupId)
+      
+      // Generate new group ID with a number suffix
+      const existingGroupNumbers = currentSlide.elements
+        .map(el => el.groupId)
+        .filter((id): id is string => !!id)
+        .map(id => {
+          const match = id.match(/group-(\d+)/)
+          return match ? parseInt(match[1]) : 0
+        })
+      const maxGroupNum = existingGroupNumbers.length > 0 ? Math.max(...existingGroupNumbers) : 0
+      const newGroupId = `group-${maxGroupNum + 1}`
+      
+      // Duplicate all elements in the group
+      const timestamp = Date.now()
+      const newElements: SlideElement[] = groupElements.map((el, idx) => ({
+        ...el,
+        id: `element-${timestamp}-${idx}`,
+        x: el.x + 20,
+        y: el.y + 20,
+        groupId: newGroupId,
+      }))
+      
+      const newTemplate: CarouselTemplate = {
+        ...template,
+        updatedAt: Date.now(),
+        slides: template.slides.map((slide, i) => {
+          if (i !== currentSlideIndex) return slide
+          return {
+            ...slide,
+            elements: [...slide.elements, ...newElements],
+          }
+        }),
+      }
+      setTemplate(newTemplate)
+      setSelectedElementId(newElements[0]?.id || null)
+      setSelectedElementIds(new Set(newElements.map(el => el.id)))
+      saveToHistory(newTemplate)
+      return
+    }
+    
+    // Single element duplicate
+    if (!selectedElement) return
 
     const newElement: SlideElement = {
       ...selectedElement,
@@ -3375,7 +5733,17 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
     if (!template || !currentSlide || selectedElementIds.size < 2) return
 
     const selectedIds = Array.from(selectedElementIds)
-    const groupId = `group-${Date.now()}`
+    
+    // Generate numbered group ID
+    const existingGroupNumbers = currentSlide.elements
+      .map(el => el.groupId)
+      .filter((id): id is string => !!id)
+      .map(id => {
+        const match = id.match(/group-(\d+)/)
+        return match ? parseInt(match[1]) : 0
+      })
+    const maxGroupNum = existingGroupNumbers.length > 0 ? Math.max(...existingGroupNumbers) : 0
+    const groupId = `group-${maxGroupNum + 1}`
 
     // Simply assign the same groupId to all selected elements - keep their absolute positions
     const newTemplate: CarouselTemplate = {
@@ -3441,20 +5809,67 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
     saveToHistory(newTemplate)
   }, [template, currentSlide, selectedElementId, selectedElementIds, currentSlideIndex, saveToHistory])
 
-  // Align selected elements
-  const handleAlignElements = useCallback((alignment: "left" | "center" | "right" | "top" | "middle" | "bottom") => {
-    if (!template || !currentSlide || selectedElementIds.size < 2) return
+  // Remove a single element from its group
+  const handleRemoveFromGroup = useCallback(() => {
+    if (!template || !currentSlide || !selectedElementId) return
 
-    const selectedIds = Array.from(selectedElementIds)
+    const selectedElement = currentSlide.elements.find(el => el.id === selectedElementId)
+    if (!selectedElement || !selectedElement.groupId) return
+
+    const newTemplate: CarouselTemplate = {
+      ...template,
+      updatedAt: Date.now(),
+      slides: template.slides.map((slide, i) => {
+        if (i !== currentSlideIndex) return slide
+        return {
+          ...slide,
+          elements: slide.elements.map(el => {
+            if (el.id === selectedElementId) {
+              const { groupId, ...rest } = el
+              return rest as SlideElement
+            }
+            return el
+          }),
+        }
+      }),
+    }
+
+    setTemplate(newTemplate)
+    saveToHistory(newTemplate)
+  }, [template, currentSlide, selectedElementId, currentSlideIndex, saveToHistory])
+
+  // Align selected elements (or single element to canvas)
+  const handleAlignElements = useCallback((alignment: "left" | "center" | "right" | "top" | "middle" | "bottom") => {
+    if (!template || !currentSlide) return
+
+    const selectedIds = selectedElementId 
+      ? [selectedElementId, ...Array.from(selectedElementIds)]
+      : Array.from(selectedElementIds)
+    
     const elementsToAlign = currentSlide.elements.filter(el => selectedIds.includes(el.id))
     
-    if (elementsToAlign.length < 2) return
+    if (elementsToAlign.length === 0) return
 
-    // Calculate bounding box of all selected elements
-    const minX = Math.min(...elementsToAlign.map(el => el.x))
-    const minY = Math.min(...elementsToAlign.map(el => el.y))
-    const maxX = Math.max(...elementsToAlign.map(el => el.x + el.width))
-    const maxY = Math.max(...elementsToAlign.map(el => el.y + el.height))
+    const size = CAROUSEL_SIZES[template.size]
+    
+    // For single element, align to canvas. For multiple, align to bounding box.
+    const alignToCanvas = elementsToAlign.length === 1
+    
+    let minX: number, minY: number, maxX: number, maxY: number
+    
+    if (alignToCanvas) {
+      // Align to canvas bounds
+      minX = 0
+      minY = 0
+      maxX = size.width
+      maxY = size.height
+    } else {
+      // Align to bounding box of selected elements
+      minX = Math.min(...elementsToAlign.map(el => el.x))
+      minY = Math.min(...elementsToAlign.map(el => el.y))
+      maxX = Math.max(...elementsToAlign.map(el => el.x + el.width))
+      maxY = Math.max(...elementsToAlign.map(el => el.y + el.height))
+    }
 
     const updatedElements = currentSlide.elements.map(el => {
       if (!selectedIds.includes(el.id)) return el
@@ -3500,7 +5915,87 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
 
     setTemplate(newTemplate)
     saveToHistory(newTemplate)
-  }, [template, currentSlide, selectedElementIds, currentSlideIndex, saveToHistory])
+  }, [template, currentSlide, selectedElementId, selectedElementIds, currentSlideIndex, saveToHistory])
+
+  // Distribute elements with gap
+  const handleDistributeWithGap = useCallback((direction: "horizontal" | "vertical", gap: number) => {
+    if (!template || !currentSlide) return
+
+    const selectedIds = selectedElementId 
+      ? [selectedElementId, ...Array.from(selectedElementIds)]
+      : Array.from(selectedElementIds)
+    
+    // Get unique IDs
+    const uniqueSelectedIds = [...new Set(selectedIds)]
+    
+    // Also include elements from the same group
+    const selectedElement = currentSlide.elements.find(el => el.id === selectedElementId)
+    if (selectedElement?.groupId) {
+      const groupMembers = currentSlide.elements.filter(el => el.groupId === selectedElement.groupId)
+      groupMembers.forEach(el => {
+        if (!uniqueSelectedIds.includes(el.id)) {
+          uniqueSelectedIds.push(el.id)
+        }
+      })
+    }
+
+    const elementsToDistribute = currentSlide.elements
+      .filter(el => uniqueSelectedIds.includes(el.id))
+    
+    if (elementsToDistribute.length < 2) return // Need at least 2 elements
+
+    // Sort elements by position
+    const sortedElements = [...elementsToDistribute].sort((a, b) => {
+      return direction === "horizontal" ? a.x - b.x : a.y - b.y
+    })
+
+    // Calculate starting position (first element stays in place)
+    let currentPosition = direction === "horizontal" ? sortedElements[0].x : sortedElements[0].y
+
+    // Create position updates
+    const positionUpdates: Map<string, { x?: number; y?: number }> = new Map()
+
+    sortedElements.forEach((el, index) => {
+      if (index === 0) {
+        // First element keeps its position
+        currentPosition = direction === "horizontal" 
+          ? el.x + el.width + gap 
+          : el.y + el.height + gap
+        return
+      }
+
+      if (direction === "horizontal") {
+        positionUpdates.set(el.id, { x: currentPosition })
+        currentPosition = currentPosition + el.width + gap
+      } else {
+        positionUpdates.set(el.id, { y: currentPosition })
+        currentPosition = currentPosition + el.height + gap
+      }
+    })
+
+    const updatedElements = currentSlide.elements.map(el => {
+      const updates = positionUpdates.get(el.id)
+      if (updates) {
+        return { ...el, ...updates }
+      }
+      return el
+    })
+
+    const newTemplate: CarouselTemplate = {
+      ...template,
+      updatedAt: Date.now(),
+      slides: template.slides.map((slide, i) => {
+        if (i !== currentSlideIndex) return slide
+        return {
+          ...slide,
+          elements: updatedElements,
+        }
+      }),
+    }
+
+    setTemplate(newTemplate)
+    saveToHistory(newTemplate)
+  }, [template, currentSlide, selectedElementId, selectedElementIds, currentSlideIndex, saveToHistory])
 
   // Keyboard shortcut for grouping (Ctrl+G)
   useEffect(() => {
@@ -3580,22 +6075,23 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
       } as TextElement
     } else {
       const selectedShapeType = shapeType || "rectangle"
+      const isLine = selectedShapeType === "line"
       newElement = {
         id: `element-${Date.now()}`,
         type: "shape",
         shapeType: selectedShapeType,
         x: 100,
         y: 100,
-        width: selectedShapeType === "line" ? 300 : 200,
-        height: selectedShapeType === "line" ? 4 : 200,
+        width: isLine ? 300 : 200,
+        height: isLine ? 4 : 200,
         rotation: 0,
         opacity: 1,
         locked: false,
         visible: true,
         zIndex: currentSlide?.elements.length || 0,
-        fill: template.palette.colors.primary,
-        stroke: "transparent",
-        strokeWidth: 0,
+        fill: isLine ? "transparent" : template.palette.colors.primary,
+        stroke: isLine ? template.palette.colors.primary : "transparent",
+        strokeWidth: isLine ? 4 : 0,
         borderRadius: selectedShapeType === "rounded-rectangle" ? 16 : undefined,
       } as ShapeElement
     }
@@ -3756,141 +6252,106 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
     saveToHistory(newTemplate)
   }
 
-  // Export Functions
-  const exportSlides = async (format: "png" | "pdf") => {
+  // Update canvas margins
+  const updateCanvasMargins = (updates: Partial<Spacing>) => {
+    setCanvasMargins({ ...canvasMargins, ...updates })
+  }
+
+  // Helper function to convert any CSS color to hex for html2canvas compatibility
+  // html2canvas doesn't support oklch, hsl, lab, lch color functions
+  const convertColorForExport = (color: string | undefined): string => {
+    if (!color) return "transparent"
+    
+    // If it's already a hex color, return as is
+    if (color.startsWith("#")) {
+      return color
+    }
+    
+    // If it's already rgb/rgba, return as is
+    if (color.startsWith("rgb")) {
+      return color
+    }
+    
+    try {
+      // Create an off-screen canvas to convert any CSS color to hex
+      const canvas = document.createElement("canvas")
+      canvas.width = 1
+      canvas.height = 1
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return "#000000"
+      
+      // Set the fill style to the color and draw a pixel
+      ctx.fillStyle = color
+      ctx.fillRect(0, 0, 1, 1)
+      
+      // Read the pixel to get the actual RGB values
+      const imageData = ctx.getImageData(0, 0, 1, 1)
+      const [r, g, b, a] = imageData.data
+      
+      // If transparent
+      if (a === 0) {
+        return "transparent"
+      }
+      
+      // Convert to hex
+      const toHex = (n: number) => n.toString(16).padStart(2, '0')
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+    } catch {
+      // Fallback: try using computed style
+      try {
+        const tempEl = document.createElement("div")
+        tempEl.style.backgroundColor = color
+        document.body.appendChild(tempEl)
+        const computedColor = getComputedStyle(tempEl).backgroundColor
+        document.body.removeChild(tempEl)
+        
+        // Parse rgb(r, g, b) format
+        const match = computedColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+        if (match) {
+          const [, r, g, b] = match
+          const toHex = (n: string) => parseInt(n).toString(16).padStart(2, '0')
+          return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+        }
+        
+        return "#000000"
+      } catch {
+        return "#000000"
+      }
+    }
+  }
+
+  // Handle export with options - uses the new carousel-export utility
+  const handleExportWithOptions = async () => {
     if (!template) return
     setIsExporting(true)
-
+    
     try {
-      const blobs: Blob[] = []
-      const size = CAROUSEL_SIZES[template.size]
-
-      // Create a temporary container for rendering
-      const container = document.createElement("div")
-      container.style.position = "fixed"
-      container.style.left = "-9999px"
-      container.style.top = "-9999px"
-      document.body.appendChild(container)
-
-      for (let i = 0; i < template.slides.length; i++) {
-        const slide = template.slides[i]
-        
-        // Create slide element
-        const slideEl = document.createElement("div")
-        slideEl.style.width = `${size.width}px`
-        slideEl.style.height = `${size.height}px`
-        slideEl.style.position = "relative"
-        
-        // Set background
-        if (slide.background.type === "solid") {
-          slideEl.style.backgroundColor = slide.background.color || "#FFFFFF"
-        } else if (slide.background.type === "gradient" && slide.background.gradient) {
-          slideEl.style.background = `linear-gradient(${getGradientAngle(slide.background.gradient.direction)}, ${slide.background.gradient.from}, ${slide.background.gradient.to})`
-        }
-
-        // Add grid overlay if exportWithGrid is enabled
-        if (exportWithGrid) {
-          const gridOverlay = document.createElement("div")
-          gridOverlay.style.position = "absolute"
-          gridOverlay.style.inset = "0"
-          gridOverlay.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)`
-          gridOverlay.style.backgroundSize = "20px 20px"
-          gridOverlay.style.pointerEvents = "none"
-          gridOverlay.style.zIndex = "9999"
-          slideEl.appendChild(gridOverlay)
-        }
-
-        // Render elements
-        slide.elements.forEach(element => {
-          if (!element.visible) return
-
-          const el = document.createElement("div")
-          el.style.position = "absolute"
-          el.style.left = `${element.x}px`
-          el.style.top = `${element.y}px`
-          el.style.width = `${element.width}px`
-          el.style.height = `${element.height}px`
-          el.style.transform = `rotate(${element.rotation}deg)`
-          el.style.opacity = String(element.opacity)
-          el.style.zIndex = String(element.zIndex)
-
-          if (["text", "heading", "subheading", "body", "quote"].includes(element.type)) {
-            const textEl = element as TextElement
-            el.style.fontFamily = textEl.style.fontFamily
-            el.style.fontSize = `${textEl.style.fontSize}px`
-            el.style.fontWeight = String(textEl.style.fontWeight)
-            el.style.lineHeight = String(textEl.style.lineHeight)
-            el.style.letterSpacing = `${textEl.style.letterSpacing}px`
-            el.style.textAlign = textEl.style.textAlign
-            el.style.color = textEl.style.color
-            el.style.whiteSpace = "pre-wrap"
-            el.innerText = textEl.content
-          } else if (element.type === "shape") {
-            const shapeEl = element as ShapeElement
-            el.style.backgroundColor = shapeEl.fill
-            if (shapeEl.strokeWidth > 0) {
-              el.style.border = `${shapeEl.strokeWidth}px solid ${shapeEl.stroke}`
-            }
-            if (shapeEl.shapeType === "circle") {
-              el.style.borderRadius = "50%"
-            } else if (shapeEl.shapeType === "rounded-rectangle" && shapeEl.borderRadius) {
-              el.style.borderRadius = `${shapeEl.borderRadius}px`
-            }
-          }
-
-          slideEl.appendChild(el)
-        })
-
-        container.appendChild(slideEl)
-
-        // Capture as canvas
-        const canvas = await html2canvas(slideEl, {
-          width: size.width,
-          height: size.height,
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-        })
-
-        // Convert to blob
-        const blob = await new Promise<Blob>((resolve) => {
-          canvas.toBlob((blob) => resolve(blob!), format === "png" ? "image/png" : "image/jpeg", 0.95)
-        })
-        blobs.push(blob)
-
-        container.removeChild(slideEl)
-      }
-
-      document.body.removeChild(container)
-
-      if (format === "pdf") {
-        // Create PDF
-        const pdf = new jsPDF({
-          orientation: size.width > size.height ? "landscape" : "portrait",
-          unit: "px",
-          format: [size.width, size.height],
-        })
-
-        for (let i = 0; i < blobs.length; i++) {
-          if (i > 0) pdf.addPage([size.width, size.height])
-          const imgData = URL.createObjectURL(blobs[i])
-          pdf.addImage(imgData, "PNG", 0, 0, size.width, size.height)
-        }
-
-        pdf.save(`${template.name}-carousel.pdf`)
+      // Parse the page range using the utility function
+      let slideIndices: number[]
+      if (exportPageRange === "all") {
+        slideIndices = Array.from({ length: template.slides.length }, (_, i) => i)
+      } else if (exportPageRange === "current") {
+        slideIndices = [currentSlideIndex]
       } else {
-        // Download individual PNGs
-        blobs.forEach((blob, i) => {
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement("a")
-          a.href = url
-          a.download = `${template.name}-slide-${i + 1}.png`
-          a.click()
-          URL.revokeObjectURL(url)
-        })
+        slideIndices = parsePageRange(exportPageRange, template.slides.length)
+      }
+      
+      if (slideIndices.length === 0) {
+        // Default to all slides if no valid pages
+        slideIndices = Array.from({ length: template.slides.length }, (_, i) => i)
       }
 
-      onExport?.(format, blobs)
+      // Use the new download utility
+      const blobs = await downloadCarouselSlides(template, {
+        format: exportFormat,
+        scale: 2,
+        quality: 0.95,
+        slideIndices,
+        includeGrid: exportWithGrid,
+      })
+
+      // Trigger the onExport callback if provided
+      onExport?.(exportFormat, blobs)
     } catch (error) {
       console.error("Export error:", error)
     } finally {
@@ -4104,18 +6565,28 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
+                <Button 
+                  variant={showMargins ? "default" : "ghost"} 
+                  size="icon"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect()
+                    setPopupPosition({ x: rect.left, y: rect.bottom + 8 })
+                    setShowMarginPopup(!showMarginPopup)
+                  }}
+                >
+                  <Square className="h-4 w-4" style={{ strokeDasharray: "3,2" }} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Canvas Margins</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button variant={previewMode ? "default" : "ghost"} size="icon" onClick={() => setPreviewMode(!previewMode)}>
                   <Eye className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{previewMode ? "Exit Preview" : "Preview Mode"}</TooltipContent>
             </Tooltip>
-            {showGrid && (
-              <div className="flex items-center gap-2 ml-2">
-                <Label className="text-xs">Export with grid</Label>
-                <Switch checked={exportWithGrid} onCheckedChange={setExportWithGrid} />
-              </div>
-            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -4125,13 +6596,178 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
                 Fill with AI Content
               </Button>
             )}
-            {/* Separate PNG / PDF buttons */}
-            <Button size="sm" onClick={() => exportSlides("png")} disabled={isExporting}>
-              <FileImage className="h-4 w-4 mr-1" />{isExporting ? "..." : "PNG"}
-            </Button>
-            <Button size="sm" onClick={() => exportSlides("pdf")} disabled={isExporting}>
-              <FileText className="h-4 w-4 mr-1" />{isExporting ? "..." : "PDF"}
-            </Button>
+            {/* Export Dropdown with Options */}
+            <Popover open={showExportDialog} onOpenChange={setShowExportDialog}>
+              <PopoverTrigger asChild>
+                <Button size="sm" disabled={isExporting}>
+                  <Download className="h-4 w-4 mr-1" />
+                  {isExporting ? "Exporting..." : "Export"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-72" align="end">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="font-semibold text-sm">Export Options</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Choose format and pages to export
+                    </p>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {/* Format Selection */}
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium">Format</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button 
+                          size="sm" 
+                          variant={exportFormat === "png" ? "default" : "outline"}
+                          onClick={() => setExportFormat("png")}
+                        >
+                          <FileImage className="h-4 w-4 mr-1" />
+                          PNG
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant={exportFormat === "jpg" ? "default" : "outline"}
+                          onClick={() => setExportFormat("jpg")}
+                        >
+                          <FileImage className="h-4 w-4 mr-1" />
+                          JPG
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant={exportFormat === "jpeg" ? "default" : "outline"}
+                          onClick={() => setExportFormat("jpeg")}
+                        >
+                          <FileImage className="h-4 w-4 mr-1" />
+                          JPEG
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant={exportFormat === "pdf" ? "default" : "outline"}
+                          onClick={() => setExportFormat("pdf")}
+                        >
+                          <FileText className="h-4 w-4 mr-1" />
+                          PDF
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    {/* Page Range Selection */}
+                    <div className="space-y-2">
+                      <Label className="text-xs font-medium">Pages</Label>
+                      <Select value={exportPageRange} onValueChange={setExportPageRange}>
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Select pages" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Slides ({template?.slides.length || 0})</SelectItem>
+                          <SelectItem value="current">Current Slide ({currentSlideIndex + 1})</SelectItem>
+                          <SelectItem value="custom">Custom Range...</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      
+                      {exportPageRange === "custom" && (
+                        <div className="space-y-1">
+                          <Input 
+                            placeholder="e.g., 1, 3-5, 7"
+                            className="h-8 text-xs"
+                            onChange={(e) => {
+                              // Validate and allow custom input
+                              setExportPageRange(e.target.value || "custom")
+                            }}
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            Enter page numbers separated by commas, use "-" for ranges
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Grid option - always show */}
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Include grid in export</Label>
+                      <Switch 
+                        checked={exportWithGrid} 
+                        onCheckedChange={setExportWithGrid} 
+                      />
+                    </div>
+                  </div>
+                  
+                  <Separator />
+                  
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => setShowExportDialog(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={handleExportWithOptions}
+                      disabled={isExporting}
+                    >
+                      {isExporting ? "Exporting..." : "Export"}
+                    </Button>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+            
+            {/* Quick Export Buttons */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={async () => {
+                    if (!template) return
+                    setIsExporting(true)
+                    try {
+                      const blobs = await downloadCarouselSlides(template, { format: "png" })
+                      onExport?.("png", blobs)
+                    } finally {
+                      setIsExporting(false)
+                    }
+                  }} 
+                  disabled={isExporting}
+                >
+                  <FileImage className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Quick export all as PNG</p>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={async () => {
+                    if (!template) return
+                    setIsExporting(true)
+                    try {
+                      const blobs = await downloadCarouselSlides(template, { format: "pdf" })
+                      onExport?.("pdf", blobs)
+                    } finally {
+                      setIsExporting(false)
+                    }
+                  }} 
+                  disabled={isExporting}
+                >
+                  <FileText className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Quick export all as PDF</p>
+              </TooltipContent>
+            </Tooltip>
+            
             <Button variant="ghost" size="icon" onClick={() => document.documentElement.classList.toggle('dark')}>
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -4201,6 +6837,10 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Multi-select</span>
                         <kbd className="px-2 py-0.5 bg-muted rounded text-[10px]">Ctrl + Click</kbd>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Select single in group</span>
+                        <kbd className="px-2 py-0.5 bg-muted rounded text-[10px]">Double-click</kbd>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Resize frame only</span>
@@ -4384,7 +7024,7 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
                         <Input
                           type="file"
                           accept="image/*"
-                          className="h-9 text-xs"
+                          className="h-9 text-xs cursor-pointer"
                           onChange={(e) => {
                             const file = e.target.files?.[0]
                             if (file) {
@@ -4539,11 +7179,19 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
                     }
                   }
                 }}
+                onDoubleClickElement={(id) => {
+                  // Double-click on grouped element to select only that element
+                  setSelectedElementId(id)
+                  setSelectedElementIds(new Set([id]))
+                }}
                 onUpdateElement={handleUpdateElement}
+                onDragEnd={commitToHistory}
                 zoom={zoom}
                 showGrid={showGrid}
                 showGuides={!previewMode}
                 previewMode={previewMode}
+                showMargins={showMargins}
+                canvasMargins={canvasMargins}
               />
             ) : null}
             </div>
@@ -4576,7 +7224,9 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
                       onDuplicate={handleDuplicateElement}
                       onGroup={handleGroupElements}
                       onUngroup={handleUngroupElements}
+                      onRemoveFromGroup={handleRemoveFromGroup}
                       onAlign={handleAlignElements}
+                      onDistributeWithGap={handleDistributeWithGap}
                       canGroup={selectedElementIds.size >= 2 && !currentSlide?.elements.some(el => selectedElementIds.has(el.id) && el.groupId)}
                       canUngroup={Boolean(selectedElement?.groupId || (currentSlide?.elements.some(el => selectedElementIds.has(el.id) && el.groupId)))}
                     />
@@ -4593,15 +7243,40 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
                     onSelectElement={(id) => {
                       // Check if element is part of a group
                       const element = currentSlide?.elements.find(el => el.id === id)
-                      const groupId = element?.groupId
                       
-                      if (groupId) {
-                        // Select all group members
-                        const groupMembers = currentSlide?.elements
-                          .filter(el => el.groupId === groupId)
-                          .map(el => el.id) || []
-                        setSelectedElementId(id)
+                      // When clicking from layers panel, select only that specific element
+                      // The group header will select all members
+                      setSelectedElementId(id)
+                      setSelectedElementIds(new Set([id]))
+                    }}
+                    onSelectGroup={(groupId) => {
+                      // Select all members of a group when clicking group header
+                      const groupMembers = currentSlide?.elements
+                        .filter(el => el.groupId === groupId)
+                        .map(el => el.id) || []
+                      if (groupMembers.length > 0) {
+                        setSelectedElementId(groupMembers[0])
                         setSelectedElementIds(new Set(groupMembers))
+                      }
+                    }}
+                    onMultiSelect={(id, addToSelection) => {
+                      // Ctrl+click to add to or remove from selection
+                      if (addToSelection) {
+                        setSelectedElementIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(id)) {
+                            next.delete(id)
+                            if (selectedElementId === id) {
+                              setSelectedElementId(next.size > 0 ? Array.from(next)[0] : null)
+                            }
+                          } else {
+                            next.add(id)
+                            if (!selectedElementId) {
+                              setSelectedElementId(id)
+                            }
+                          }
+                          return next
+                        })
                       } else {
                         setSelectedElementId(id)
                         setSelectedElementIds(new Set([id]))
@@ -4627,6 +7302,26 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
                         slides: template.slides.map((slide, i) => {
                           if (i !== currentSlideIndex) return slide
                           return { ...slide, elements: updatedElements }
+                        }),
+                      }
+                      setTemplate(newTemplate)
+                      saveToHistory(newTemplate)
+                    }}
+                    onRemoveElementFromGroup={(elementId) => {
+                      // Remove the element from its group by clearing groupId
+                      if (!template || !currentSlide) return
+                      
+                      const newTemplate: CarouselTemplate = {
+                        ...template,
+                        updatedAt: Date.now(),
+                        slides: template.slides.map((slide, i) => {
+                          if (i !== currentSlideIndex) return slide
+                          return {
+                            ...slide,
+                            elements: slide.elements.map(el => 
+                              el.id === elementId ? { ...el, groupId: undefined } : el
+                            ),
+                          }
                         }),
                       }
                       setTemplate(newTemplate)
@@ -4760,6 +7455,17 @@ export function CarouselDesigner({ initialContent, onSave, onExport }: CarouselD
           )}
         </div>
       </div>
+      
+      {/* Margin Popup */}
+      <MarginPopup
+        isOpen={showMarginPopup}
+        onClose={() => setShowMarginPopup(false)}
+        margins={canvasMargins}
+        showMargins={showMargins}
+        onMarginsChange={setCanvasMargins}
+        onShowMarginsChange={setShowMargins}
+        position={popupPosition}
+      />
       
       {/* Floating Notepad */}
       <FloatingNotepad
